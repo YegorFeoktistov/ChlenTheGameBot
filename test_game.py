@@ -249,8 +249,26 @@ class TestGameStateManager(unittest.TestCase):
         self.assertEqual(res2["status"], "success")
         self.assertTrue(res2["game_started"])
 
+    def test_username_stripping(self):
+        chat_id = 900
+        
+        # Win with a name starting with @ (simulating old data format)
+        self.manager.handle_command(chat_id, 1, "User One", roll_override=0.5)
+        self.manager.handle_command(chat_id, 2, "@WinnerTag", roll_override=0.01)
+        
+        # Verify leaderboard doesn't tag
+        text_leaderboard = self.manager.get_leaderboard_text(chat_id)
+        self.assertIn("WinnerTag", text_leaderboard)
+        self.assertNotIn("@WinnerTag", text_leaderboard)
+        
+        # Verify longest session doesn't tag
+        text_longest = self.manager.get_longest_session_text(chat_id)
+        self.assertIn("WinnerTag", text_longest)
+        self.assertNotIn("@WinnerTag", text_longest)
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

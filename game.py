@@ -202,6 +202,8 @@ class GameStateManager:
         lines = ["🏆 Таблица лидеров игры \"Член: the Game\":\n"]
         for idx, user_data in enumerate(sorted_users, 1):
             name = user_data["name"]
+            if name.startswith("@"):
+                name = name.lstrip("@")
             wins = user_data["wins"]
             lines.append(f"{idx}. {name} — {pluralize_wins(wins)}")
 
@@ -224,6 +226,8 @@ class GameStateManager:
 
         messages = longest["messages"]
         winner = longest["winner_name"]
+        if winner.startswith("@"):
+            winner = winner.lstrip("@")
         ended_at = longest["ended_at"]
 
         return (
