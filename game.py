@@ -273,3 +273,20 @@ class GameStateManager:
         for i, cls in enumerate(CHLEN_CLASSES, 1):
             lines.append(f"{i}. {cls}")
         return "\n".join(lines)
+
+    def set_user_class(self, chat_id, user_id, class_index):
+        """Sets the class for a user in a chat."""
+        state = self.get_chat_state(chat_id)
+        if "user_classes" not in state:
+            state["user_classes"] = {}
+        state["user_classes"][str(user_id)] = class_index
+        self.save_state()
+
+    def get_user_class(self, chat_id, user_id):
+        """Gets the class for a user in a chat."""
+        state = self.get_chat_state(chat_id)
+        user_classes = state.get("user_classes", {})
+        class_index = user_classes.get(str(user_id))
+        if class_index is not None and 1 <= class_index <= len(CHLEN_CLASSES):
+            return CHLEN_CLASSES[class_index - 1]
+        return None
