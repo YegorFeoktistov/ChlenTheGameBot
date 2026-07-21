@@ -4,7 +4,7 @@ import logging
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
-from game import GameStateManager
+from game import GameStateManager, CHLEN_CLASSES
 
 # Configure logging
 logging.basicConfig(
@@ -189,6 +189,73 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"Routing secret win phrase '{update.message.text}'")
         await chlen_command(update, context)
 
+async def chlenclasses_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler for the /chlenclasses command."""
+    if not update.message or not update.effective_chat:
+        return
+    chat_id = update.effective_chat.id
+    logger.info(f"Received /chlenclasses request in chat_id={chat_id}")
+    text = manager.get_classes_text()
+    await update.message.reply_text(text)
+
+async def becomechlen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler for the /becomechlen command."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return
+
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+    user_id = user.id
+
+    display_name = user.first_name
+    if user.last_name:
+        display_name += f" {user.last_name}"
+
+    logger.info(f"Received /becomechlen from user_id={user_id} ({display_name}) in chat_id={chat_id}")
+
+    args = context.args
+    if not args:
+        await update.message.reply_text("Укажите индекс класса: /becomechlen 1")
+        return
+
+    try:
+        class_index = int(args[0])
+    except ValueError:
+        await update.message.reply_text("Индекс должен быть числом.")
+        return
+
+    if class_index < 1 or class_index > len(CHLEN_CLASSES):
+        await update.message.reply_text(f"Неверный индекс. Доступные классы: 1-{len(CHLEN_CLASSES)}")
+        return
+
+    manager.set_user_class(chat_id, user_id, class_index)
+
+    class_name = CHLEN_CLASSES[class_index - 1]
+    await update.message.reply_text(f"{display_name} стал {class_name}!")
+
+
+async def whichchlen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler for the /whichchlen command."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return
+
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+    user_id = user.id
+
+    display_name = user.first_name
+    if user.last_name:
+        display_name += f" {user.last_name}"
+
+    logger.info(f"Received /whichchlen from user_id={user_id} ({display_name}) in chat_id={chat_id}")
+
+    current_class = manager.get_user_class(chat_id, user_id)
+    if current_class:
+        await update.message.reply_text(f"{display_name} — {current_class}!")
+    else:
+        await update.message.reply_text(f"{display_name} ещё не выбрал класс.")
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handler for the /start command."""
     if not update.message:
@@ -200,7 +267,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "Каждый ход дает тебе 10% шанс выиграть. Но помни: ты не можешь ходить дважды подряд!\n\n"
         "Доступные команды:\n"
         "/chlenboard - посмотреть таблицу лидеров\n"
-        "/longestchlen - посмотреть статистику самой долгой игры"
+        "/longestchlen - посмотреть статистику самой долгой игры\n"
+        "/chlenclasses - посмотреть классы в игре\n"
+        "/becomechlen - выбрать класс\n"
+        "/whichchlen - посмотреть свой класс"
     )
 
 async def post_init(application) -> None:
@@ -210,6 +280,9 @@ async def post_init(application) -> None:
         BotCommand("chlen", "Испытать удачу"),
         BotCommand("chlenboard", "Таблица лидеров"),
         BotCommand("longestchlen", "Самая долгая игра"),
+        BotCommand("chlenclasses", "Классы в игре"),
+        BotCommand("becomechlen", "Выбрать класс"),
+        BotCommand("whichchlen", "Посмотреть свой класс"),
         BotCommand("chlensub", "Подписаться на уведомления о старте"),
         BotCommand("chlenunsub", "Отписаться от уведомлений о старте"),
         BotCommand("start", "Инструкция к игре")
@@ -229,6 +302,9 @@ def main() -> None:
     app.add_handler(CommandHandler("chlen", chlen_command))
     app.add_handler(CommandHandler("chlenboard", chlenboard_command))
     app.add_handler(CommandHandler("longestchlen", longestchlen_command))
+    app.add_handler(CommandHandler("chlenclasses", chlenclasses_command))
+    app.add_handler(CommandHandler("becomechlen", becomechlen_command))
+    app.add_handler(CommandHandler("whichchlen", whichchlen_command))
     app.add_handler(CommandHandler("chlensub", chlensub_command))
     app.add_handler(CommandHandler("chlenunsub", chlenunsub_command))
     app.add_handler(CommandHandler("start", start_command))
