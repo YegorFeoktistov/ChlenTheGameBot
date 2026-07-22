@@ -1,83 +1,84 @@
 # Член: the Game - Telegram Bot
 
-Telegram bot for group chats running a fun interactive turn-based luck game.
+Modern, high-performance Node.js & TypeScript Telegram Bot for group chats running a fun interactive turn-based luck game.
 
 ## Game Rules
-1. **Starting the Game**: The very first time anyone sends `/chlen` (or writes the word `член` in the chat) in a group chat, the bot starts a new game session and announces: `Член - игра началась!`.
-2. **Turns**: When a user submits the `/chlen` command (or sends `член` as plain text, which is case-insensitive), they automatically roll for an outcome (a player cannot win on the very first command starting a session):
+1. **Starting the Game**: Sending `/chlen` (or writing the word `член` in plain text) starts a new game session and announces: `Член - игра началась!`.
+2. **Turns**: When a user submits `/chlen` or sends `член`, they roll for an outcome (a player cannot win on the 1st command starting a session):
    - **90% Probability**: The bot replies with `Член`.
    - **10% Probability**: The bot replies with `Я победил`.
-3. **Ending the Game**: When a user rolls `Я победил`, the game session ends. The bot announces: `Член - игра окончена! Победитель - {username}`. Cooldown turn tracking is reset upon session end.
-4. **Subsequent Games**: Sending `/chlen` or `член` after a game session has ended starts a new session.
-5. **Anti-Spam / Turn Order**:
-   - One user cannot send the command multiple times in a row.
-   - If a user tries to send the command consecutively, the first retry is met with the warning: `Дождись очереди`.
-   - All subsequent spam attempts by the same user are **silently ignored** until someone else sends a command.
-   - Once another player runs the command, the previous player is allowed to play again.
-6. **Leaderboard**: Sending the `/chlenboard` command displays the scoreboard of wins in the group chat, sorted from highest to lowest.
-7. **Longest Session**: Sending the `/longestchlen` command displays statistics on the longest completed game session in the chat (number of turns, winner name, and ending date/time).
-8. **Session Cooldown**: Once a session ends, there is a 10-second cooldown before a new game session can be started. Any attempt to start a session within this window triggers the warning: `Дай члену отдохнуть`.
-9. **Subscriptions**: Users can subscribe to receive notifications when a new game session starts.
-   - `/chlensub`: Subscribes the user (requires them to have a Telegram username set in their profile). The bot replies: `{username} подписался на Член. Уважаемый мужчина!`
-   - `/chlenunsub`: Unsubscribes the user. The bot replies: `{username} отписался от Члена. Ты что натурал?`
-   - When a session starts, all subscribers are tagged on a new line: `{usernames} - лови(те) Член!` ("лови" is used for one subscriber, and "ловите" for multiple).
+3. **Ending the Game**: When a user rolls `Я победил`, the session ends with: `Член - игра окончена! Победитель - {name}`.
+4. **Anti-Spam / Turn Order**:
+   - Consecutive moves by the same player are prevented (`Дождись очереди`).
+   - Repeat spam attempts are silently ignored.
+5. **Leaderboard**: `/chlenboard` displays the scoreboard of wins in the group chat, sorted from highest to lowest.
+6. **Longest Session Record**: `/longestchlen` displays the longest completed game session record (number of turns, winner name, date).
+7. **Classes System**:
+   - `/chlenclasses`: View available game classes (*Членокнижник*, *Членомант*, *Членодин*, *Охотник на Члены*, *Мастер тысячи Членов*).
+   - `/becomechlen <1-5>`: Choose your game class.
+   - `/whichchlen`: View your assigned class.
+8. **Session Cooldown**: 10-second cooldown between games (`Дай члену отдохнуть`).
+9. **Subscriptions**: `/chlensub` to subscribe to start notifications, `/chlenunsub` to unsubscribe.
 
 ---
-
-## Command Suggestions
-The bot automatically configures the command suggestions menu in Telegram when it starts up (via `post_init` registration). The available commands are:
-- `/chlen` - Испытать удачу в игре
-- `/chlenboard` - Посмотреть таблицу лидеров
-- `/longestchlen` - Посмотреть самую долгую игру
-- `/chlensub` - Подписаться на уведомления о старте
-- `/chlenunsub` - Отписаться от уведомлений о старте
-- `/start` - Прочитать инструкцию
-
 
 ## Installation & Setup
 
 ### Prerequisites
-- Python 3.9+ (tested with Python 3.9.6)
-- A Telegram Bot Token. Create one by messaging [@BotFather](https://t.me/BotFather) on Telegram. Make sure to **disable Group Privacy** if you want the bot to see commands without being mentioned (alternatively, users will need to run `/chlen@YourBotUsername`).
+- Node.js 20+ (tested on Node.js v24.18.0)
+- npm 10+
+- Telegram Bot Token from [@BotFather](https://t.me/BotFather)
 
-### Steps
-1. **Clone/extract the repository** and open the project directory.
-
-2. **Create a Virtual Environment & Install Dependencies**:
+### Installation
+1. **Install Dependencies**:
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
+   npm install
    ```
 
-3. **Configure Environment Variables**:
-   - Copy `.env.example` to `.env`:
-     ```bash
-     cp .env.example .env
-     ```
-   - Edit `.env` and fill in your `TELEGRAM_BOT_TOKEN`:
-     ```env
-     TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
-     ```
+2. **Configure Environment**:
+   ```bash
+   cp .env.example .env
+   # Set TELEGRAM_BOT_TOKEN in .env
+   ```
+
+3. **Build the Project**:
+   ```bash
+   npm run build
+   ```
+
+---
+
+## Quality Suite & Testing
+
+- **Run Unit Tests (Vitest)**:
+  ```bash
+  npm test
+  ```
+- **Check Test Coverage (>80% required)**:
+  ```bash
+  npm run test:coverage
+  ```
+- **TypeScript Type Check**:
+  ```bash
+  npm run typecheck
+  ```
+- **ESLint & Prettier**:
+  ```bash
+  npm run lint
+  npm run format
+  ```
 
 ---
 
 ## Running the Bot
 
-To start the bot, run:
+### Local / Virtual Machine Execution
 ```bash
-# Ensure virtual env is active
-source venv/bin/activate
-
-# Start the bot
-python3 bot.py
+npm start
 ```
 
----
-
-## Running Unit Tests
-
-We have a comprehensive unit test suite covering the game state manager, cooldowns, and session resets. To execute the tests, run:
+### Telegram Serverless Deployment
 ```bash
-python3 -m unittest test_game.py
+npm run deploy
+npm run migrate
 ```
