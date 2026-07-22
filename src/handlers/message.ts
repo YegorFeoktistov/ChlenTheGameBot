@@ -1,0 +1,196 @@
+import { api } from 'sdk';
+import {
+  formatDisplayName,
+  ensureUserAndChat,
+  subscribeUser,
+  unsubscribeUser,
+  getSubscribers,
+} from '../services/user.service.js';
+import { handleGameCommand } from '../services/game.service.js';
+import { getLeaderboardText, getLongestSessionText } from '../services/stats.service.js';
+import { getClassesText, setUserClass, getUserClass } from '../services/class.service.js';
+import { pluralizeTurns } from '../utils/pluralize.js';
+import { TelegramMessage } from '../types/sdk.d.js';
+
+export default async function (message: TelegramMessage) {
+  if (!message || !message.chat || !message.from || !message.text) {
+    return;
+  }
+
+  const chatId = String(message.chat.id);
+  const chatTitle = message.chat.title || message.chat.first_name || 'Chat';
+  const userId = String(message.from.id);
+  const firstName = message.from.first_name || 'Игрок';
+  const lastName = message.from.last_name || null;
+  const username = message.from.username || null;
+  const rawText = message.text.trim();
+  const lowerText = rawText.toLowerCase();
+
+  const userDisplayName = formatDisplayName(firstName, lastName);
+
+  // Ensure user and chat exist in database
+  await ensureUserAndChat(chatId, chatTitle, userId, firstName, lastName, username);
+
+  // 1. Command /start
+  if (lowerText.startsWith('/start')) {
+    await api.sendMessage({
+      chat_id: chatId,
+      text:
+        'Член - игра началась!\n\n' +
+        'Отправь команду /chlen в групповом чате, чтобы испытать удачу. ' +
+        'Каждый ход дает тебе 10% шанс выиграть. Но помни: ты не можешь ходить дважды подряд!\n\n' +
+        'Доступные команды:\n' +
+        '/chlenboard - посмотреть таблицу лидеров\n' +
+        '/longestchlen - посмотреть статистику самой долгой игры\n' +
+        '/chlenclasses - посмотреть классы в игре\n' +
+        '/becomechlen - выбрать класс\n' +
+        '/whichchlen - посмотреть свой класс\n' +
+        '/chlensub - подписаться на уведомления о старте\n' +
+        '/chlenunsub - отписаться от уведомлений о старте',
+    });
+    return;
+  }
+
+  // 2. Command /chlenboard
+  if (lowerText.startsWith('/chlenboard')) {
+    const text = await getLeaderboardText(chatId);
+    await api.sendMessage({ chat_id: chatId, text });
+    return;
+  }
+
+  // 3. Command /longestchlen
+  if (lowerText.startsWith('/longestchlen')) {
+    const text = await getLongestSessionText(chatId);
+    await api.sendMessage({ chat_id: chatId, text });
+    return;
+  }
+
+  // 4. Command /chlenclasses
+  if (lowerText.startsWith('/chlenclasses')) {
+    const text = getClassesText();
+    await api.sendMessage({ chat_id: chatId, text });
+    return;
+  }
+
+  // 5. Command /becomechlen
+  if (lowerText.startsWith('/becomechlen')) {
+    const parts = rawText.split(/\s+/);
+    if (parts.length < 2) {
+      await api.sendMessage({ chat_id: chatId, text: 'Укажите индекс класса: /becomechlen 1' });
+      return;
+    }
+    const idx = parseInt(parts[1], 10);
+    if (isNaN(idx)) {
+      await api.sendMessage({ chat_id: chatId, text: 'Индекс должен быть числом.' });
+      return;
+    }
+    const assignedClass = await setUserClass(chatId, userId, userDisplayName, idx);
+    if (!assignedClass) {
+      await api.sendMessage({ chat_id: chatId, text: 'Неверный индекс. Доступные классы: 1-5' });
+    } else {
+      await api.sendMessage({ chat_id: chatId, text: `${userDisplayName} стал ${assignedClass}!` });
+    }
+    return;
+  }
+
+  // 6. Command /whichchlen
+  if (lowerText.startsWith('/whichchlen')) {
+    const cls = await getUserClass(chatId, userId);
+    if (cls) {
+      await api.sendMessage({ chat_id: chatId, text: `${userDisplayName} — ${cls}!` });
+    } else {
+      await api.sendMessage({ chat_id: chatId, text: `${userDisplayName} ещё не выбрал класс.` });
+    }
+    return;
+  }
+
+  // 7. Command /chlensub
+  if (lowerText.startsWith('/chlensub')) {
+    if (!username) {
+      await api.sendMessage({
+        chat_id: chatId,
+        text: 'Для подписки на уведомления необходимо установить никнейм (username) в настройках Телеграма.',
+      });
+      return;
+    }
+    await subscribeUser(chatId, userId, username);
+    await api.sendMessage({
+      chat_id: chatId,
+      text: `${userDisplayName} подписался на Член. Уважаемый мужчина!`,
+    });
+    return;
+  }
+
+  // 8. Command /chlenunsub
+  if (lowerText.startsWith('/chlenunsub')) {
+    await unsubscribeUser(chatId, userId);
+    await api.sendMessage({
+      chat_id: chatId,
+      text: `${userDisplayName} отписался от Члена. Ты что натурал?`,
+    });
+    return;
+  }
+
+  // 9. Command /chlen OR plain text "член"
+  const isChlenCommand = lowerText.startsWith('/chlen') || lowerText === 'член';
+  if (!isChlenCommand) {
+    return;
+  }
+
+  const res = await handleGameCommand(chatId, userId, userDisplayName);
+
+  if (res.status === 'ignored') {
+    return;
+  }
+
+  if (res.status === 'warning') {
+    await api.sendMessage({
+      chat_id: chatId,
+      text: 'Дождись очереди',
+      reply_to_message_id: message.message_id,
+    });
+    return;
+  }
+
+  if (res.status === 'session_cooldown') {
+    await api.sendMessage({
+      chat_id: chatId,
+      text: 'Дай члену отдохнуть',
+      reply_to_message_id: message.message_id,
+    });
+    return;
+  }
+
+  if (res.status === 'success') {
+    if (res.gameStarted) {
+      const subs = await getSubscribers(chatId);
+      let subText = '';
+      if (subs && subs.length > 0) {
+        const subList = subs.map((u) => `@${u.replace(/^@+/, '')}`);
+        const verb = subList.length === 1 ? 'лови' : 'ловите';
+        subText = `\n${subList.join(' ')} - ${verb} Член!`;
+      }
+      await api.sendMessage({ chat_id: chatId, text: `Член - игра началась!${subText}` });
+    }
+
+    const isCommand = rawText.startsWith('/');
+    if (res.outcome === 'Я победил' || isCommand) {
+      await api.sendMessage({
+        chat_id: chatId,
+        text: res.outcome || 'Член',
+        reply_to_message_id: message.message_id,
+      });
+    }
+
+    if (res.gameEnded) {
+      const turnStr = pluralizeTurns(res.turns || 0);
+      const recordMsg = res.newRecord ? ' (Новый рекорд! 🚀)' : '';
+      await api.sendMessage({
+        chat_id: chatId,
+        text:
+          `Член - игра окончена! Победитель - ${res.winnerName}\n` +
+          `Игра длилась ${turnStr}${recordMsg}`,
+      });
+    }
+  }
+}

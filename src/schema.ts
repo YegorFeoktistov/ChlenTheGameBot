@@ -1,0 +1,65 @@
+import { table, integer, text, primaryKey } from 'sdk/db';
+import type { TableColumns } from './types/sdk.d.js';
+
+// 1. Registered Telegram Chats
+export const chats = table('chats', {
+  id: text('id').primaryKey(), // Telegram chat ID as string
+  title: text('title'),
+  createdAt: integer('created_at', { mode: 'timestamp' }),
+});
+
+// 2. Registered Telegram Users
+export const users = table('users', {
+  id: text('id').primaryKey(), // Telegram user ID as string
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  username: text('username'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }),
+});
+
+// 3. User Statistics & Classes Per Chat (Multi-Chat Isolation)
+export const chatUserStats = table(
+  'chat_user_stats',
+  {
+    chatId: text('chat_id'),
+    userId: text('user_id'),
+    wins: integer('wins').default(0),
+    displayName: text('display_name'),
+    classIndex: integer('class_index'), // 1-5 (nullable)
+  },
+  (t: TableColumns) => ({
+    pk: primaryKey(t.chatId, t.userId),
+  })
+);
+
+// 4. Chat Subscribers for Start Notifications
+export const chatSubscribers = table(
+  'chat_subscribers',
+  {
+    chatId: text('chat_id'),
+    userId: text('user_id'),
+    username: text('username'), // Telegram @username handle
+  },
+  (t: TableColumns) => ({
+    pk: primaryKey(t.chatId, t.userId),
+  })
+);
+
+// 5. Current Game Session State Per Chat
+export const chatGameSessions = table('chat_game_sessions', {
+  chatId: text('chat_id').primaryKey(),
+  isActive: integer('is_active').default(0), // 0 = false, 1 = true
+  lastUserId: text('last_user_id'),
+  sessionMessagesCount: integer('session_messages_count').default(0),
+  sessionEndedAt: integer('session_ended_at'), // Unix timestamp in seconds for 10s cooldown
+  warnedUserIds: text('warned_user_ids').default('[]'), // JSON array string
+});
+
+// 6. Longest Game Session Records Per Chat
+export const chatLongestSessions = table('chat_longest_sessions', {
+  chatId: text('chat_id').primaryKey(),
+  messagesCount: integer('messages_count'),
+  winnerId: text('winner_id'),
+  winnerDisplayName: text('winner_display_name'),
+  endedAt: text('ended_at'), // Formatted timestamp (e.g. "17.07.2026 11:13")
+});
