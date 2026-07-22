@@ -38,6 +38,7 @@ export async function handleGameCommand(
           sessionMessagesCount: 0,
           sessionEndedAt: null,
           warnedUserIds: '[]',
+          skillsUsed: '[]',
         };
 
   let warnedUsers: string[] = [];
