@@ -1,4 +1,4 @@
-const chatLocks = new Map<string, Promise<void>>();
+export const chatLocks = new Map<string, Promise<void>>();
 
 /**
  * Sequential execution lock (Mutex) per chatId.
@@ -6,25 +6,25 @@ const chatLocks = new Map<string, Promise<void>>();
  * eliminating race conditions and SQLite lock contention. Automatically cleans up map entries when idle.
  */
 export async function withChatLock<T>(chatId: string, fn: () => Promise<T>): Promise<T> {
-  const previousLock = chatLocks.get(chatId) || Promise.resolve();
+  const previous = chatLocks.get(chatId) || Promise.resolve();
 
   let release: () => void;
-  const nextLock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-
-  chatLocks.set(
-    chatId,
-    previousLock.then(() => nextLock)
+  const taskPromise = previous.then(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      })
   );
 
+  chatLocks.set(chatId, taskPromise);
+
   try {
-    await previousLock;
+    await previous;
     return await fn();
   } finally {
-    if (chatLocks.get(chatId) === nextLock) {
+    release!();
+    if (chatLocks.get(chatId) === taskPromise) {
       chatLocks.delete(chatId);
     }
-    release!();
   }
 }

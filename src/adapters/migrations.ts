@@ -118,10 +118,11 @@ export function runMigrations(db: Database.Database): void {
     if (!appliedNames.has(migration.name)) {
       db.transaction(() => {
         migration.up(db);
-        db.prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)').run(
+        db.prepare('INSERT OR IGNORE INTO schema_migrations (name, applied_at) VALUES (?, ?)').run(
           migration.name,
           Math.floor(Date.now() / 1000)
         );
+        console.log(`[DB Migration] Applied migration: ${migration.name}`);
       })();
     }
   }
