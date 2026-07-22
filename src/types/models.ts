@@ -33,6 +33,7 @@ export interface GameSessionRecord {
   sessionMessagesCount: number;
   sessionEndedAt: number | null;
   warnedUserIds: string;
+  skillUserIds: string;
 }
 
 export interface LongestSessionRecord {

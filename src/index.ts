@@ -21,6 +21,7 @@ async function registerCommands() {
     { command: 'whichchlen', description: 'Посмотреть свой класс' },
     { command: 'chlensub', description: 'Подписаться на уведомления о старте' },
     { command: 'chlenunsub', description: 'Отписаться от уведомлений о старте' },
+    { command: 'chlenskill', description: 'Использовать способность класса' },
     { command: 'start', description: 'Инструкция к игре' },
   ];
 

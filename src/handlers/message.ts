@@ -10,6 +10,7 @@ import { handleGameCommand } from '../services/game.service.js';
 import { getLeaderboardText, getLongestSessionText } from '../services/stats.service.js';
 import { getClassesText, setUserClass, getUserClass } from '../services/class.service.js';
 import { pluralizeTurns } from '../utils/pluralize.js';
+import { getUserSkillText, recordSkillUsed } from '../services/skills.service.js';
 import { TelegramMessage } from '../types/sdk.d.js';
 
 export default async function (message: TelegramMessage) {
@@ -45,6 +46,7 @@ export default async function (message: TelegramMessage) {
         '/chlenclasses - посмотреть классы в игре\n' +
         '/becomechlen - выбрать класс\n' +
         '/whichchlen - посмотреть свой класс\n' +
+        '/chlenskill - использовать способность класса\n' +
         '/chlensub - подписаться на уведомления о старте\n' +
         '/chlenunsub - отписаться от уведомлений о старте',
     });
@@ -131,7 +133,36 @@ export default async function (message: TelegramMessage) {
     return;
   }
 
-  // 9. Command /chlen OR plain text "член"
+  // 9. Command /chlenskill
+  if (lowerText.startsWith('/chlenskill')) {
+    const skillResult = await getUserSkillText(chatId, userId);
+    if (!skillResult) {
+      await api.sendMessage({
+        chat_id: chatId,
+        text: `${userDisplayName} ещё не выбрал класс. Используй /becomechlen, чтобы выбрать класс.`,
+      });
+      return;
+    }
+
+    if (skillResult.alreadyUsed) {
+      await api.sendMessage({
+        chat_id: chatId,
+        text: `${userDisplayName} уже использовал свою способность в этой игре!`,
+        reply_to_message_id: message.message_id,
+      });
+      return;
+    }
+
+    await recordSkillUsed(chatId, userId);
+    await api.sendMessage({
+      chat_id: chatId,
+      text: `${userDisplayName} использует способность: ${skillResult.skillText}`,
+      reply_to_message_id: message.message_id,
+    });
+    return;
+  }
+
+  // 10. Command /chlen OR plain text "член"
   const isChlenCommand = lowerText.startsWith('/chlen') || lowerText === 'член';
   if (!isChlenCommand) {
     return;
