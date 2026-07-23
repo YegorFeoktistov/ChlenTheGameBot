@@ -1,6 +1,7 @@
 export interface ChatRecord {
   id: string;
   title: string;
+  queueMode?: number; // 1 = Strict, 0 = Non-strict
   createdAt?: Date | number;
 }
 
@@ -32,8 +33,25 @@ export interface GameSessionRecord {
   lastUserId: string | null;
   sessionMessagesCount: number;
   sessionEndedAt: number | null;
-  warnedUserIds: string;
-  skillUserIds: string;
+}
+
+export interface WarnedUserRecord {
+  chatId: string;
+  userId: string;
+}
+
+export interface SkillUserRecord {
+  chatId: string;
+  userId: string;
+}
+
+export interface QueuePlayerRecord {
+  chatId: string;
+  userId: string;
+  turnOrder: number;
+  skipCount: number;
+  isExcluded: number;
+  lastTurnAt: number | null;
 }
 
 export interface LongestSessionRecord {

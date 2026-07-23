@@ -5,6 +5,7 @@ import type { TableColumns } from './types/sdk.d.js';
 export const chats = table('chats', {
   id: text('id').primaryKey(), // Telegram chat ID as string
   title: text('title'),
+  queueMode: integer('queue_mode').default(1), // 1 = Strict (default), 0 = Non-strict
   createdAt: integer('created_at', { mode: 'timestamp' }),
 });
 
@@ -52,11 +53,49 @@ export const chatGameSessions = table('chat_game_sessions', {
   lastUserId: text('last_user_id'),
   sessionMessagesCount: integer('session_messages_count').default(0),
   sessionEndedAt: integer('session_ended_at'), // Unix timestamp in seconds for 10s cooldown
-  warnedUserIds: text('warned_user_ids').default('[]'), // JSON array string
-  skillUserIds: text('skill_user_ids').default('[]'), // JSON array of user IDs who used their skill
 });
 
-// 6. Longest Game Session Records Per Chat
+// 6. Anti-Spam Warned Users Per Active Session (1NF/3NF Relational Table)
+export const chatWarnedUsers = table(
+  'chat_warned_users',
+  {
+    chatId: text('chat_id'),
+    userId: text('user_id'),
+  },
+  (t: TableColumns) => ({
+    pk: primaryKey(t.chatId, t.userId),
+  })
+);
+
+// 7. Users Who Used Skill In Active Session (1NF/3NF Relational Table)
+export const chatSkillUsers = table(
+  'chat_skill_users',
+  {
+    chatId: text('chat_id'),
+    userId: text('user_id'),
+  },
+  (t: TableColumns) => ({
+    pk: primaryKey(t.chatId, t.userId),
+  })
+);
+
+// 8. Strict Queue Players Per Active Session (1NF/3NF Relational Table)
+export const chatQueuePlayers = table(
+  'chat_queue_players',
+  {
+    chatId: text('chat_id'),
+    userId: text('user_id'),
+    turnOrder: integer('turn_order'), // 1, 2, 3...
+    skipCount: integer('skip_count').default(0),
+    isExcluded: integer('is_excluded').default(0), // 0 = active, 1 = Order 69 excluded
+    lastTurnAt: integer('last_turn_at'), // Unix timestamp
+  },
+  (t: TableColumns) => ({
+    pk: primaryKey(t.chatId, t.userId),
+  })
+);
+
+// 9. Longest Game Session Records Per Chat
 export const chatLongestSessions = table('chat_longest_sessions', {
   chatId: text('chat_id').primaryKey(),
   messagesCount: integer('messages_count'),

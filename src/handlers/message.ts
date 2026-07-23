@@ -1,4 +1,4 @@
-import { api } from 'sdk';
+import { api, db } from 'sdk';
 import {
   formatDisplayName,
   ensureUserAndChat,
@@ -6,12 +6,17 @@ import {
   unsubscribeUser,
   getSubscribers,
 } from '../services/user.service.js';
-import { handleGameCommand } from '../services/game.service.js';
+import { handleGameCommand, abortGameSession } from '../services/game.service.js';
 import { getLeaderboardText, getLongestSessionText } from '../services/stats.service.js';
 import { getClassesText, setUserClass, getUserClass } from '../services/class.service.js';
-import { pluralizeTurns } from '../utils/pluralize.js';
+import { pluralizeTurns, pluralizeSeconds } from '../utils/pluralize.js';
 import { getUserSkillText, recordSkillUsed } from '../services/skills.service.js';
-import { TelegramMessage } from '../types/sdk.d.js';
+import { getQueueMode, setQueueMode } from '../services/queue.service.js';
+import { chatGameSessions } from '../schema.js';
+import { eq } from 'sdk/db';
+import { CommandStatus } from '../utils/constants.js';
+import { withChatLock } from '../utils/mutex.js';
+import type { TelegramMessage } from '../types/sdk.d.js';
 
 export default async function (message: TelegramMessage) {
   if (!message || !message.chat || !message.from || !message.text) {
@@ -38,7 +43,7 @@ export default async function (message: TelegramMessage) {
       chat_id: chatId,
       text:
         'Член - игра началась!\n\n' +
-        'Отправь команду /chlen в групповом чате, чтобы испытать удачу. ' +
+        'Отправь команду /chlen (или напиши "член" / "chlen") в групповом чате, чтобы испытать удачу. ' +
         'Каждый ход дает тебе 10% шанс выиграть. Но помни: ты не можешь ходить дважды подряд!\n\n' +
         'Доступные команды:\n' +
         '/chlenboard - посмотреть таблицу лидеров\n' +
@@ -47,6 +52,7 @@ export default async function (message: TelegramMessage) {
         '/becomechlen - выбрать класс\n' +
         '/whichchlen - посмотреть свой класс\n' +
         '/chlenskill - использовать способность класса\n' +
+        '/chlenqueue - переключить режим очередности (строгий/нестрогий)\n' +
         '/chlensub - подписаться на уведомления о старте\n' +
         '/chlenunsub - отписаться от уведомлений о старте',
     });
@@ -162,28 +168,132 @@ export default async function (message: TelegramMessage) {
     return;
   }
 
-  // 10. Command /chlen OR plain text "член"
-  const isChlenCommand = lowerText.startsWith('/chlen') || lowerText === 'член';
+  // 10. Command /chlenqueue
+  if (lowerText.startsWith('/chlenqueue')) {
+    await withChatLock(chatId, async () => {
+      const parts = rawText.split(/\s+/);
+      const hasParam = parts.length > 1;
+
+      // Check if session is active
+      const sessionRows = (await db
+        .select()
+        .from(chatGameSessions)
+        .where(eq(chatGameSessions.chatId, chatId))
+        .run()) as { isActive?: number }[];
+
+      const isSessionActive =
+        sessionRows && sessionRows.length > 0 && sessionRows[0].isActive === 1;
+
+      if (hasParam) {
+        const modeParam = parseInt(parts[1], 10);
+        if (isSessionActive && (modeParam === 0 || modeParam === 1)) {
+          await api.sendMessage({
+            chat_id: chatId,
+            text: 'Не мешай Члену работать!',
+          });
+          return;
+        }
+
+        if (modeParam === 1) {
+          await setQueueMode(chatId, 1);
+          await api.sendMessage({ chat_id: chatId, text: 'Включен строгий Член' });
+        } else if (modeParam === 0) {
+          await setQueueMode(chatId, 0);
+          await api.sendMessage({ chat_id: chatId, text: 'Включен нестрогий Член' });
+        } else {
+          await api.sendMessage({
+            chat_id: chatId,
+            text: 'Укажите режим: /chlenqueue 1 (строгий) или /chlenqueue 0 (нестрогий)',
+          });
+        }
+      } else {
+        const currentMode = await getQueueMode(chatId);
+        const modeText = currentMode === 1 ? 'Строгий Член' : 'Нестрогий Член';
+        await api.sendMessage({ chat_id: chatId, text: modeText });
+      }
+    });
+    return;
+  }
+
+  // 11. Command /abortchlen
+  if (lowerText.startsWith('/abortchlen')) {
+    await withChatLock(chatId, async () => {
+      const { wasActive } = await abortGameSession(chatId);
+      if (wasActive) {
+        await api.sendMessage({ chat_id: chatId, text: 'Вы оборвали Член. Игра окончена.' });
+      } else {
+        await api.sendMessage({ chat_id: chatId, text: 'Нет активного Члена.' });
+      }
+    });
+    return;
+  }
+
+  // 12. Command /chlen OR plain text "член" / "chlen"
+  const isChlenCommand =
+    lowerText.startsWith('/chlen') || lowerText === 'член' || lowerText === 'chlen';
   if (!isChlenCommand) {
     return;
   }
 
-  const res = await handleGameCommand(chatId, userId, userDisplayName);
+  const res = await withChatLock(chatId, () => handleGameCommand(chatId, userId, userDisplayName));
 
-  if (res.status === 'ignored') {
-    return;
-  }
-
-  if (res.status === 'warning') {
+  if (res.status === CommandStatus.EXCLUDED) {
     await api.sendMessage({
       chat_id: chatId,
-      text: 'Дождись очереди',
+      text: 'Натуралам вход закрыт!',
       reply_to_message_id: message.message_id,
     });
     return;
   }
 
-  if (res.status === 'session_cooldown') {
+  if (res.status === CommandStatus.ALL_EXCLUDED) {
+    if (res.order69UserName) {
+      await api.sendMessage({
+        chat_id: chatId,
+        text: `Обнаружен натурал - ${res.order69UserName}! Выполнить Приказ 69!`,
+      });
+    }
+    await api.sendMessage({
+      chat_id: chatId,
+      text: 'Все участники признаны натуралами! Вы расстроили Член. Игра окончена.',
+    });
+    return;
+  }
+
+  if (res.status === CommandStatus.ORDER_69) {
+    await api.sendMessage({
+      chat_id: chatId,
+      text: `Обнаружен натурал - ${res.order69UserName}! Выполнить Приказ 69!`,
+    });
+    return;
+  }
+
+  if (res.status === CommandStatus.TURN_SKIPPED) {
+    await api.sendMessage({
+      chat_id: chatId,
+      text: `${res.skippedUserName} - ты обронил Член!\nСледующим ходит ${res.nextUserName}.`,
+    });
+    return;
+  }
+
+  if (res.status === CommandStatus.IGNORED) {
+    return;
+  }
+
+  if (res.status === CommandStatus.WARNING) {
+    let text = 'Дождись очереди.';
+    if (res.expectedUserName && res.remainingSeconds !== undefined) {
+      text = `Дождись очереди. Сейчас ходит ${res.expectedUserName} (осталось ${pluralizeSeconds(res.remainingSeconds)}).`;
+    }
+    await api.sendMessage({
+      chat_id: chatId,
+      text,
+      reply_to_message_id: message.message_id,
+    });
+    return;
+  }
+
+  if (res.status === CommandStatus.SESSION_COOLDOWN) {
     await api.sendMessage({
       chat_id: chatId,
       text: 'Дай члену отдохнуть',
@@ -192,7 +302,7 @@ export default async function (message: TelegramMessage) {
     return;
   }
 
-  if (res.status === 'success') {
+  if (res.status === CommandStatus.SUCCESS) {
     if (res.gameStarted) {
       const subs = await getSubscribers(chatId);
       let subText = '';
