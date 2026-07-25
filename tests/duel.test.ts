@@ -397,8 +397,6 @@ describe('Duel (Дуэль) Feature', () => {
       duelIsAccepted: 1,
     };
 
-    mockQueueMode = 1; // Strict mode enabled in chat
-
     const spy = vi.spyOn(api, 'sendMessage');
 
     // Run timeout processor
