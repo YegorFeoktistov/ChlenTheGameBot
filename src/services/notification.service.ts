@@ -1,5 +1,5 @@
 import { api } from 'sdk';
-import { pluralizeTurns } from '../utils/pluralize.js';
+import { pluralizeTurns, pluralizeSeconds } from '../utils/pluralize.js';
 import { cleanUsername } from './user.service.js';
 
 export async function sendGameStartNotification(
@@ -73,4 +73,80 @@ export async function sendGameEndNotification(
         `Игра длилась ${turnStr}${recordMsg}`,
     });
   }
+}
+
+export async function sendDuelInvitation(
+  chatId: string,
+  initiatorName: string,
+  opponentName: string
+): Promise<void> {
+  await api.sendMessage({
+    chat_id: chatId,
+    text: `${initiatorName} вызывает тебя на дуэль! ${opponentName}, примешь ли ты вызов?`,
+  });
+}
+
+export async function sendDuelDecline(chatId: string, opponentName: string): Promise<void> {
+  await api.sendMessage({
+    chat_id: chatId,
+    text: `${opponentName} отказался скрещивать Член.`,
+  });
+}
+
+export async function sendDuelInterference(
+  chatId: string,
+  replyToMessageId: number
+): Promise<void> {
+  await api.sendMessage({
+    chat_id: chatId,
+    text: 'Не мешай мужчинам скрещивать Член!',
+    reply_to_message_id: replyToMessageId,
+  });
+}
+
+export async function sendActiveGameWarning(
+  chatId: string,
+  replyToMessageId: number
+): Promise<void> {
+  await api.sendMessage({
+    chat_id: chatId,
+    text: 'Игра уже идет. Сразитесь в другой раз.',
+    reply_to_message_id: replyToMessageId,
+  });
+}
+
+export async function sendExcludedWarning(chatId: string, replyToMessageId: number): Promise<void> {
+  await api.sendMessage({
+    chat_id: chatId,
+    text: 'Натуралам вход закрыт!',
+    reply_to_message_id: replyToMessageId,
+  });
+}
+
+export async function sendSessionCooldownWarning(
+  chatId: string,
+  replyToMessageId: number
+): Promise<void> {
+  await api.sendMessage({
+    chat_id: chatId,
+    text: 'Дай члену отдохнуть',
+    reply_to_message_id: replyToMessageId,
+  });
+}
+
+export async function sendOutOfTurnWarning(
+  chatId: string,
+  replyToMessageId: number,
+  expectedUserName?: string | null,
+  remainingSeconds?: number
+): Promise<void> {
+  let text = 'Дождись очереди.';
+  if (expectedUserName && remainingSeconds !== undefined) {
+    text = `Дождись очереди. Сейчас ходит ${expectedUserName} (осталось ${pluralizeSeconds(remainingSeconds)}).`;
+  }
+  await api.sendMessage({
+    chat_id: chatId,
+    text,
+    reply_to_message_id: replyToMessageId,
+  });
 }

@@ -5,11 +5,16 @@ import {
   subscribeUser,
   unsubscribeUser,
   getSubscribers,
+  getUserByUsername,
 } from '../services/user.service.js';
-import { handleGameCommand, abortGameSession } from '../services/game.service.js';
+import {
+  handleGameCommand,
+  abortGameSession,
+  initiateDuelSession,
+  terminateGameSession,
+} from '../services/game.service.js';
 import { getLeaderboardText, getLongestSessionText } from '../services/stats.service.js';
 import { getClassesText, setUserClass, getUserClass } from '../services/class.service.js';
-import { pluralizeSeconds } from '../utils/pluralize.js';
 import {
   getUserSkillText,
   recordSkillUsed,
@@ -20,12 +25,20 @@ import {
   sendGameStartNotification,
   sendSkipNotifications,
   sendGameEndNotification,
+  sendDuelInvitation,
+  sendDuelDecline,
+  sendDuelInterference,
+  sendActiveGameWarning,
+  sendExcludedWarning,
+  sendSessionCooldownWarning,
+  sendOutOfTurnWarning,
 } from '../services/notification.service.js';
-import { chatGameSessions } from '../schema.js';
-import { eq } from 'sdk/db';
-import { CommandStatus, ChlenClass } from '../utils/constants.js';
+import { chatGameSessions, chatWarnedUsers } from '../schema.js';
+import { eq, and } from 'sdk/db';
+import { CommandStatus, ChlenClass, GameCommand, DUEL_DECLINE_WORDS } from '../utils/constants.js';
 import { withChatLock } from '../utils/mutex.js';
 import type { TelegramMessage } from '../types/sdk.d.js';
+import type { GameSessionRecord, WarnedUserRecord } from '../types/models.js';
 
 export default async function (message: TelegramMessage) {
   if (!message || !message.chat || !message.from || !message.text) {
@@ -46,54 +59,81 @@ export default async function (message: TelegramMessage) {
   // Ensure user and chat exist in database
   await ensureUserAndChat(chatId, chatTitle, userId, firstName, lastName, username);
 
+  // Retrieve current session to check for duel state
+  const sessionRows = (await db
+    .select()
+    .from(chatGameSessions)
+    .where(eq(chatGameSessions.chatId, chatId))
+    .run()) as GameSessionRecord[];
+  const session = sessionRows && sessionRows.length > 0 ? sessionRows[0] : null;
+
+  // Handle duel decline/refusal words from opponent
+  if (session && session.isActive === 1 && session.isDuel === 1 && session.duelIsAccepted === 0) {
+    if (userId === session.duelOpponentId) {
+      const cleanText = lowerText.replace(/\s+/g, '');
+      if (DUEL_DECLINE_WORDS.includes(cleanText)) {
+        const opponentDisplayName = formatDisplayName(firstName, lastName);
+        await withChatLock(chatId, async () => {
+          await terminateGameSession(chatId);
+        });
+        await sendDuelDecline(chatId, opponentDisplayName);
+        return;
+      }
+    }
+  }
+
   // 1. Command /start
-  if (lowerText.startsWith('/start')) {
+  if (lowerText.startsWith(GameCommand.START)) {
     await api.sendMessage({
       chat_id: chatId,
       text:
-        'Член - игра началась!\n\n' +
-        'Отправь команду /chlen (или напиши "член" / "chlen") в групповом чате, чтобы испытать удачу. ' +
+        `Член - игра началась!\n\n` +
+        `Отправь команду ${GameCommand.GAME_CHLEN_SLASH} (или напиши "${GameCommand.GAME_CHLEN_RU}" / "${GameCommand.GAME_CHLEN_EN}") в групповом чате, чтобы испытать удачу. ` +
         'Каждый ход дает тебе 10% шанс выиграть. Но помни: ты не можешь ходить дважды подряд!\n\n' +
         'Доступные команды:\n' +
-        '/chlenboard - посмотреть таблицу лидеров\n' +
-        '/longestchlen - посмотреть статистику самой долгой игры\n' +
-        '/chlenclasses - посмотреть классы в игре\n' +
-        '/becomechlen - выбрать класс\n' +
-        '/whichchlen - посмотреть свой класс\n' +
-        '/chlenskill - использовать способность класса\n' +
-        '/chlenqueue - переключить режим очередности (строгий/нестрогий)\n' +
-        '/chlensub - подписаться на уведомления о старте\n' +
-        '/chlenunsub - отписаться от уведомлений о старте',
+        `${GameCommand.BOARD} - посмотреть таблицу лидеров\n` +
+        `${GameCommand.LONGEST} - посмотреть статистику самой долгой игры\n` +
+        `${GameCommand.CLASSES} - посмотреть классы в игре\n` +
+        `${GameCommand.BECOME_CLASS} - выбрать класс\n` +
+        `${GameCommand.WHICH_CLASS} - посмотреть свой класс\n` +
+        `${GameCommand.SKILL} - использовать способность класса\n` +
+        `${GameCommand.QUEUE} - переключить режим очередности (строгий/нестрогий)\n` +
+        `${GameCommand.SUBSCRIBE} - подписаться на уведомления о старте\n` +
+        `${GameCommand.UNSUBSCRIBE} - отписаться от уведомлений о старте\n` +
+        `${GameCommand.DUEL} @username - бросить вызов на дуэль (игра для 2 игроков по нестрогой очереди)`,
     });
     return;
   }
 
   // 2. Command /chlenboard
-  if (lowerText.startsWith('/chlenboard')) {
+  if (lowerText.startsWith(GameCommand.BOARD)) {
     const text = await getLeaderboardText(chatId);
     await api.sendMessage({ chat_id: chatId, text });
     return;
   }
 
   // 3. Command /longestchlen
-  if (lowerText.startsWith('/longestchlen')) {
+  if (lowerText.startsWith(GameCommand.LONGEST)) {
     const text = await getLongestSessionText(chatId);
     await api.sendMessage({ chat_id: chatId, text });
     return;
   }
 
   // 4. Command /chlenclasses
-  if (lowerText.startsWith('/chlenclasses')) {
+  if (lowerText.startsWith(GameCommand.CLASSES)) {
     const text = getClassesText();
     await api.sendMessage({ chat_id: chatId, text });
     return;
   }
 
   // 5. Command /becomechlen
-  if (lowerText.startsWith('/becomechlen')) {
+  if (lowerText.startsWith(GameCommand.BECOME_CLASS)) {
     const parts = rawText.split(/\s+/);
     if (parts.length < 2) {
-      await api.sendMessage({ chat_id: chatId, text: 'Укажите индекс класса: /becomechlen 1' });
+      await api.sendMessage({
+        chat_id: chatId,
+        text: `Укажите индекс класса: ${GameCommand.BECOME_CLASS} 1`,
+      });
       return;
     }
     const idx = parseInt(parts[1], 10);
@@ -111,7 +151,7 @@ export default async function (message: TelegramMessage) {
   }
 
   // 6. Command /whichchlen
-  if (lowerText.startsWith('/whichchlen')) {
+  if (lowerText.startsWith(GameCommand.WHICH_CLASS)) {
     const cls = await getUserClass(chatId, userId);
     if (cls) {
       await api.sendMessage({ chat_id: chatId, text: `${userDisplayName} — ${cls}!` });
@@ -122,7 +162,7 @@ export default async function (message: TelegramMessage) {
   }
 
   // 7. Command /chlensub
-  if (lowerText.startsWith('/chlensub')) {
+  if (lowerText.startsWith(GameCommand.SUBSCRIBE)) {
     if (!username) {
       await api.sendMessage({
         chat_id: chatId,
@@ -139,7 +179,7 @@ export default async function (message: TelegramMessage) {
   }
 
   // 8. Command /chlenunsub
-  if (lowerText.startsWith('/chlenunsub')) {
+  if (lowerText.startsWith(GameCommand.UNSUBSCRIBE)) {
     await unsubscribeUser(chatId, userId);
     await api.sendMessage({
       chat_id: chatId,
@@ -149,12 +189,12 @@ export default async function (message: TelegramMessage) {
   }
 
   // 9. Command /chlenskill
-  if (lowerText.startsWith('/chlenskill')) {
+  if (lowerText.startsWith(GameCommand.SKILL)) {
     const skillResult = await getUserSkillText(chatId, userId);
     if (!skillResult) {
       await api.sendMessage({
         chat_id: chatId,
-        text: `${userDisplayName} ещё не выбрал класс. Используй /becomechlen, чтобы выбрать класс.`,
+        text: `${userDisplayName} ещё не выбрал класс. Используй ${GameCommand.BECOME_CLASS}, чтобы выбрать класс.`,
       });
       return;
     }
@@ -199,7 +239,7 @@ export default async function (message: TelegramMessage) {
   }
 
   // 10. Command /chlenqueue
-  if (lowerText.startsWith('/chlenqueue')) {
+  if (lowerText.startsWith(GameCommand.QUEUE)) {
     await withChatLock(chatId, async () => {
       const parts = rawText.split(/\s+/);
       const hasParam = parts.length > 1;
@@ -233,7 +273,7 @@ export default async function (message: TelegramMessage) {
         } else {
           await api.sendMessage({
             chat_id: chatId,
-            text: 'Укажите режим: /chlenqueue 1 (строгий) или /chlenqueue 0 (нестрогий)',
+            text: `Укажите режим: ${GameCommand.QUEUE} 1 (строгий) или ${GameCommand.QUEUE} 0 (нестрогий)`,
           });
         }
       } else {
@@ -246,7 +286,7 @@ export default async function (message: TelegramMessage) {
   }
 
   // 11. Command /abortchlen
-  if (lowerText.startsWith('/abortchlen')) {
+  if (lowerText.startsWith(GameCommand.ABORT)) {
     await withChatLock(chatId, async () => {
       const { wasActive } = await abortGameSession(chatId);
       if (wasActive) {
@@ -258,96 +298,169 @@ export default async function (message: TelegramMessage) {
     return;
   }
 
-  // 12. Command /chlen OR plain text "член" / "chlen"
-  const isChlenCommand =
-    lowerText.startsWith('/chlen') || lowerText === 'член' || lowerText === 'chlen';
-  if (!isChlenCommand) {
-    return;
-  }
+  // 12. Command /chlen OR plain text "член" / "chlen" / /chlenduel
+  const parts = rawText.split(/\s+/);
+  const firstPart = parts[0].toLowerCase();
 
-  const res = await withChatLock(chatId, () => handleGameCommand(chatId, userId, userDisplayName));
-  // Notify the chat about any skipped/excluded players
-  if (res.skippedPlayers && res.skippedPlayers.length > 0) {
-    await sendSkipNotifications(
-      chatId,
-      res.skippedPlayers,
-      res.status === CommandStatus.ALL_EXCLUDED || res.status === CommandStatus.SINGLE_PLAYER_WIN
-    );
-  }
+  const isChlenOrDuelCommand =
+    firstPart === GameCommand.GAME_CHLEN_SLASH ||
+    firstPart === GameCommand.GAME_CHLEN_RU ||
+    firstPart === GameCommand.GAME_CHLEN_EN ||
+    firstPart === GameCommand.DUEL;
 
-  if (res.status === CommandStatus.EXCLUDED) {
-    await api.sendMessage({
-      chat_id: chatId,
-      text: 'Натуралам вход закрыт!',
-      reply_to_message_id: message.message_id,
-    });
-    return;
-  }
+  if (isChlenOrDuelCommand) {
+    const isDuelInitiationCmd = firstPart === GameCommand.DUEL;
+    const hasOpponentParam = parts.length > 1 && parts[1].trim().length > 0;
 
-  if (res.status === CommandStatus.SOLE_PLAYER_TIMEOUT) {
-    await sendGameEndNotification(chatId, res.status);
-    return;
-  }
+    if (isDuelInitiationCmd || (hasOpponentParam && parts[1].startsWith('@'))) {
+      if (!hasOpponentParam) {
+        await api.sendMessage({
+          chat_id: chatId,
+          text: `Укажите юзернейм оппонента: ${GameCommand.DUEL} @username`,
+          reply_to_message_id: message.message_id,
+        });
+        return;
+      }
 
-  if (res.status === CommandStatus.SINGLE_PLAYER_WIN) {
-    await sendGameEndNotification(chatId, res.status, res.winnerName, res.turns, res.newRecord);
-    return;
-  }
+      const opponentUsernameRaw = parts[1];
+      const opponentUsernameClean = opponentUsernameRaw.replace(/^@+/, '');
 
-  if (res.status === CommandStatus.ALL_EXCLUDED) {
-    await sendGameEndNotification(chatId, res.status);
-    return;
-  }
+      // Check if session is already active (either normal game or duel)
+      if (session && session.isActive === 1) {
+        // Interference / Active game warning (exactly once per user per session)
+        await withChatLock(chatId, async () => {
+          const warnedRows = (await db
+            .select()
+            .from(chatWarnedUsers)
+            .where(and(eq(chatWarnedUsers.chatId, chatId), eq(chatWarnedUsers.userId, userId)))
+            .run()) as WarnedUserRecord[];
+          const isWarned = warnedRows && warnedRows.length > 0;
+          if (!isWarned || process.env.REPL_MODE === 'true') {
+            await db
+              .insert(chatWarnedUsers)
+              .values({ chatId, userId })
+              .onConflictDoUpdate({
+                target: [chatWarnedUsers.chatId, chatWarnedUsers.userId],
+                set: { chatId, userId },
+              })
+              .run();
+            await sendActiveGameWarning(chatId, message.message_id);
+          }
+        });
+        return;
+      }
 
-  if (res.status === CommandStatus.IGNORED) {
-    return;
-  }
+      // Find the opponent
+      const opponent = await getUserByUsername(opponentUsernameClean);
+      if (!opponent) {
+        await api.sendMessage({
+          chat_id: chatId,
+          text: `Пользователь @${opponentUsernameClean} не найден. Ему нужно написать любое сообщение боту в этом чате, чтобы зарегистрироваться.`,
+          reply_to_message_id: message.message_id,
+        });
+        return;
+      }
 
-  if (res.status === CommandStatus.WARNING) {
-    let text = 'Дождись очереди.';
-    if (res.expectedUserName && res.remainingSeconds !== undefined) {
-      text = `Дождись очереди. Сейчас ходит ${res.expectedUserName} (осталось ${pluralizeSeconds(res.remainingSeconds)}).`;
-    }
-    await api.sendMessage({
-      chat_id: chatId,
-      text,
-      reply_to_message_id: message.message_id,
-    });
-    return;
-  }
+      if (opponent.id === userId) {
+        await api.sendMessage({
+          chat_id: chatId,
+          text: 'Вы не можете вызвать на дуэль самого себя.',
+          reply_to_message_id: message.message_id,
+        });
+        return;
+      }
 
-  if (res.status === CommandStatus.SESSION_COOLDOWN) {
-    await api.sendMessage({
-      chat_id: chatId,
-      text: 'Дай члену отдохнуть',
-      reply_to_message_id: message.message_id,
-    });
-    return;
-  }
+      const opponentDisplayName = formatDisplayName(opponent.firstName, opponent.lastName);
 
-  if (res.status === CommandStatus.SUCCESS) {
-    if (res.gameStarted) {
-      const subs = await getSubscribers(chatId);
-      await sendGameStartNotification(chatId, subs);
-    }
-
-    const isCommand = rawText.startsWith('/');
-    if (res.outcome === 'Я победил' || isCommand) {
-      await api.sendMessage({
-        chat_id: chatId,
-        text: res.outcome || 'Член',
-        reply_to_message_id: message.message_id,
+      await withChatLock(chatId, async () => {
+        await initiateDuelSession(chatId, userId, opponent.id);
       });
+
+      await sendDuelInvitation(chatId, userDisplayName, opponentDisplayName);
+      return;
     }
 
-    if (res.gameEnded) {
-      await sendGameEndNotification(
+    const res = await withChatLock(chatId, () =>
+      handleGameCommand(chatId, userId, userDisplayName)
+    );
+
+    // Notify the chat about any skipped/excluded players
+    if (res.skippedPlayers && res.skippedPlayers.length > 0) {
+      await sendSkipNotifications(
         chatId,
-        'single_player_win',
-        res.winnerName,
-        res.turns,
-        res.newRecord
+        res.skippedPlayers,
+        res.status === CommandStatus.ALL_EXCLUDED || res.status === CommandStatus.SINGLE_PLAYER_WIN
       );
+    }
+
+    if (res.status === CommandStatus.EXCLUDED) {
+      await sendExcludedWarning(chatId, message.message_id);
+      return;
+    }
+
+    if (res.status === CommandStatus.SOLE_PLAYER_TIMEOUT) {
+      await sendGameEndNotification(chatId, res.status);
+      return;
+    }
+
+    if (res.status === CommandStatus.SINGLE_PLAYER_WIN) {
+      await sendGameEndNotification(chatId, res.status, res.winnerName, res.turns, res.newRecord);
+      return;
+    }
+
+    if (res.status === CommandStatus.ALL_EXCLUDED) {
+      await sendGameEndNotification(chatId, res.status);
+      return;
+    }
+
+    if (res.status === CommandStatus.IGNORED) {
+      return;
+    }
+
+    if (res.status === CommandStatus.DUEL_INTERFERENCE) {
+      await sendDuelInterference(chatId, message.message_id);
+      return;
+    }
+
+    if (res.status === CommandStatus.WARNING) {
+      await sendOutOfTurnWarning(
+        chatId,
+        message.message_id,
+        res.expectedUserName,
+        res.remainingSeconds
+      );
+      return;
+    }
+
+    if (res.status === CommandStatus.SESSION_COOLDOWN) {
+      await sendSessionCooldownWarning(chatId, message.message_id);
+      return;
+    }
+
+    if (res.status === CommandStatus.SUCCESS) {
+      if (res.gameStarted) {
+        const subs = await getSubscribers(chatId);
+        await sendGameStartNotification(chatId, subs);
+      }
+
+      const isCommand = rawText.startsWith('/');
+      if (res.outcome === 'Я победил' || isCommand) {
+        await api.sendMessage({
+          chat_id: chatId,
+          text: res.outcome || 'Член',
+          reply_to_message_id: message.message_id,
+        });
+      }
+
+      if (res.gameEnded) {
+        await sendGameEndNotification(
+          chatId,
+          'single_player_win',
+          res.winnerName,
+          res.turns,
+          res.newRecord
+        );
+      }
     }
   }
 }

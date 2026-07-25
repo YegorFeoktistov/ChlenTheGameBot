@@ -6,7 +6,9 @@ import { users, chats, chatGameSessions } from './schema.js';
 import messageHandler from './handlers/message.js';
 import type { UserRecord } from './types/models.js';
 import { processTurnTimeout } from './services/timer.service.js';
-import { TURN_TIMEOUT_SECONDS } from './utils/constants.js';
+import { TURN_TIMEOUT_SECONDS, GameCommand } from './utils/constants.js';
+
+const commandsWithoutSlash = Object.values(GameCommand).map((command) => command.slice(1));
 
 const nameToUser = new Map<string, UserRecord>();
 let currentChatId = 'chat_test';
@@ -179,8 +181,9 @@ async function startSandbox() {
       const userObj = nameToUser.get(nameKey);
 
       if (userObj) {
-        const lowerText = text.toLowerCase();
-        if (!text.startsWith('/') && lowerText !== 'член' && lowerText !== 'chlen') {
+        const firstWord = text.split(/\s+/)[0].toLowerCase();
+
+        if (!text.startsWith('/') && commandsWithoutSlash.includes(firstWord)) {
           text = '/' + text;
         }
 

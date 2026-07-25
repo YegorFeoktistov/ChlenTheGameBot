@@ -54,6 +54,10 @@ export const chatGameSessions = table('chat_game_sessions', {
   sessionMessagesCount: integer('session_messages_count').default(0),
   sessionEndedAt: integer('session_ended_at'), // Unix timestamp in seconds for 10s cooldown
   currentTurnStartedAt: integer('current_turn_started_at'),
+  isDuel: integer('is_duel').default(0), // 0 = false, 1 = true
+  duelInitiatorId: text('duel_initiator_id'),
+  duelOpponentId: text('duel_opponent_id'),
+  duelIsAccepted: integer('duel_is_accepted').default(0), // 0 = pending, 1 = accepted
 });
 
 // 6. Anti-Spam Warned Users Per Active Session (1NF/3NF Relational Table)

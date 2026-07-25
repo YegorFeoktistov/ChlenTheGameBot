@@ -116,6 +116,28 @@ var migrations = [
         );
       `);
     }
+  },
+  {
+    name: "005_add_duel_columns_to_sessions",
+    up: (db) => {
+      const columns = db.pragma("table_info(chat_game_sessions)");
+      const hasIsDuel = columns.some((c) => c.name === "is_duel");
+      if (!hasIsDuel) {
+        db.exec("ALTER TABLE chat_game_sessions ADD COLUMN is_duel INTEGER DEFAULT 0;");
+      }
+      const hasInitiator = columns.some((c) => c.name === "duel_initiator_id");
+      if (!hasInitiator) {
+        db.exec("ALTER TABLE chat_game_sessions ADD COLUMN duel_initiator_id TEXT;");
+      }
+      const hasOpponent = columns.some((c) => c.name === "duel_opponent_id");
+      if (!hasOpponent) {
+        db.exec("ALTER TABLE chat_game_sessions ADD COLUMN duel_opponent_id TEXT;");
+      }
+      const hasAccepted = columns.some((c) => c.name === "duel_is_accepted");
+      if (!hasAccepted) {
+        db.exec("ALTER TABLE chat_game_sessions ADD COLUMN duel_is_accepted INTEGER DEFAULT 0;");
+      }
+    }
   }
 ];
 function runMigrations(db) {
@@ -243,7 +265,13 @@ var chatGameSessions = table("chat_game_sessions", {
   sessionMessagesCount: integer("session_messages_count").default(0),
   sessionEndedAt: integer("session_ended_at"),
   // Unix timestamp in seconds for 10s cooldown
-  currentTurnStartedAt: integer("current_turn_started_at")
+  currentTurnStartedAt: integer("current_turn_started_at"),
+  isDuel: integer("is_duel").default(0),
+  // 0 = false, 1 = true
+  duelInitiatorId: text("duel_initiator_id"),
+  duelOpponentId: text("duel_opponent_id"),
+  duelIsAccepted: integer("duel_is_accepted").default(0)
+  // 0 = pending, 1 = accepted
 });
 var chatWarnedUsers = table(
   "chat_warned_users",

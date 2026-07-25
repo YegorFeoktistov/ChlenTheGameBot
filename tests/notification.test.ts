@@ -4,6 +4,13 @@ import {
   sendGameStartNotification,
   sendSkipNotifications,
   sendGameEndNotification,
+  sendDuelInvitation,
+  sendDuelDecline,
+  sendDuelInterference,
+  sendActiveGameWarning,
+  sendExcludedWarning,
+  sendSessionCooldownWarning,
+  sendOutOfTurnWarning,
 } from '../src/services/notification.service.js';
 
 describe('Notification Service', () => {
@@ -133,6 +140,86 @@ describe('Notification Service', () => {
       expect(spy).toHaveBeenCalledWith({
         chat_id: 'chat1',
         text: 'Член - игра окончена! Победитель - Pasha\nИгра длилась 12 ходов (Новый рекорд! 🚀)',
+      });
+    });
+  });
+
+  describe('Duel and Warning helper notifications', () => {
+    it('sends duel invitation notification', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+      await sendDuelInvitation('chat1', 'Yegor', 'Pasha');
+      expect(spy).toHaveBeenCalledWith({
+        chat_id: 'chat1',
+        text: 'Yegor вызывает тебя на дуэль! Pasha, примешь ли ты вызов?',
+      });
+    });
+
+    it('sends duel decline notification', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+      await sendDuelDecline('chat1', 'Pasha');
+      expect(spy).toHaveBeenCalledWith({
+        chat_id: 'chat1',
+        text: 'Pasha отказался скрещивать Член.',
+      });
+    });
+
+    it('sends duel interference notification', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+      await sendDuelInterference('chat1', 101);
+      expect(spy).toHaveBeenCalledWith({
+        chat_id: 'chat1',
+        text: 'Не мешай мужчинам скрещивать Член!',
+        reply_to_message_id: 101,
+      });
+    });
+
+    it('sends active game warning', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+      await sendActiveGameWarning('chat1', 102);
+      expect(spy).toHaveBeenCalledWith({
+        chat_id: 'chat1',
+        text: 'Игра уже идет. Сразитесь в другой раз.',
+        reply_to_message_id: 102,
+      });
+    });
+
+    it('sends excluded warning', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+      await sendExcludedWarning('chat1', 103);
+      expect(spy).toHaveBeenCalledWith({
+        chat_id: 'chat1',
+        text: 'Натуралам вход закрыт!',
+        reply_to_message_id: 103,
+      });
+    });
+
+    it('sends session cooldown warning', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+      await sendSessionCooldownWarning('chat1', 104);
+      expect(spy).toHaveBeenCalledWith({
+        chat_id: 'chat1',
+        text: 'Дай члену отдохнуть',
+        reply_to_message_id: 104,
+      });
+    });
+
+    it('sends out of turn warning without expected user', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+      await sendOutOfTurnWarning('chat1', 105);
+      expect(spy).toHaveBeenCalledWith({
+        chat_id: 'chat1',
+        text: 'Дождись очереди.',
+        reply_to_message_id: 105,
+      });
+    });
+
+    it('sends out of turn warning with expected user and remaining time', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+      await sendOutOfTurnWarning('chat1', 106, 'Pasha', 15);
+      expect(spy).toHaveBeenCalledWith({
+        chat_id: 'chat1',
+        text: 'Дождись очереди. Сейчас ходит Pasha (осталось 15 секунд).',
+        reply_to_message_id: 106,
       });
     });
   });

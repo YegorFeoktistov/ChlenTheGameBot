@@ -16,16 +16,20 @@ Modern, high-performance Node.js & TypeScript Telegram Bot for group chats runni
    - `/chlenqueue 0` (*Нестрогий Член*): Standard anti-spam prevents consecutive turns by the same user (`Дождись очереди`).
 5. **Aborting Active Games (`/abortchlen`)**:
    - `/abortchlen`: Aborts the active game session immediately (`Вы оборвали Член. Игра окончена.`). If no game is active, replies `Нет активного Члена.`.
-5. **Classes & Skills System**:
+6. **Duel Mode (Дуэль)**:
+   - `/chlenduel @username` (or writing any play command with opponent username: `член @username` / `chlen @username`): Invites the specified user to a private 2-player duel.
+   - **Acceptance/Refusal**: The opponent can accept the challenge by making a play move (`член` / `chlen` / `/chlen`), which immediately starts the game and announces `Член - игра началась!`. Alternatively, the opponent can refuse by replying with `нет`, `no`, or `net`, which terminates the challenge.
+   - **Duel Rules**: Duels always bypass strict queue/turn timeout rules and run strictly on non-strict (alternating turn) order between the two players. The first move of both the opponent (on acceptance) and the initiator does not allow winning, but subsequent turns can win. Moves from third-party players are blocked and ignored (warned once per user).
+7. **Classes & Skills System**:
    - `/chlenclasses`: View available game classes (*Членокнижник* (наводит Членослабость), *Членомант*, *Членодин*, *Охотник на Члены*, *Мастер тысячи Членов*).
    - `/becomechlen <1-5>`: Choose your game class.
    - `/whichchlen`: View your assigned class.
    - `/chlenskill`: Activate your class ability once per game session.
-6. **Leaderboard & Stats**:
+8. **Leaderboard & Stats**:
    - `/chlenboard`: Scoreboard of wins in the group chat, sorted highest to lowest.
    - `/longestchlen`: Displays the longest completed game session record (turns, winner, date).
-7. **Session Cooldown**: 10-second cooldown between games (`Дай члену отдохнуть`).
-8. **Subscriptions**: `/chlensub` to subscribe to start notifications, `/chlenunsub` to unsubscribe.
+9. **Session Cooldown**: 10-second cooldown between games (`Дай члену отдохнуть`).
+10. **Subscriptions**: `/chlensub` to subscribe to start notifications, `/chlenunsub` to unsubscribe.
 
 ---
 
