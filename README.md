@@ -1,4 +1,4 @@
-# Член: the Game - Telegram Bot (v1.2.1)
+# Член: the Game 🍆 - Telegram Bot (v1.2.1)
 
 Modern, high-performance Node.js & TypeScript Telegram Bot for group chats running a fun interactive turn-based luck game.
 

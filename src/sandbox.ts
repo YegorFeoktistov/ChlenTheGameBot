@@ -7,6 +7,7 @@ import messageHandler from './handlers/message.js';
 import type { UserRecord } from './types/models.js';
 import { processTurnTimeout } from './services/timer.service.js';
 import { TURN_TIMEOUT_SECONDS, GameCommand } from './utils/constants.js';
+import { TelegramMessage } from 'sdk';
 
 const commandsWithoutSlash = Object.values(GameCommand).map((command) => command.slice(1));
 
@@ -205,10 +206,10 @@ async function startSandbox() {
             username: userObj.username,
             is_bot: false,
           },
-        };
+        } as TelegramMessage;
 
         try {
-          await messageHandler(messagePayload as any);
+          await messageHandler(messagePayload);
         } catch (err) {
           console.error('\x1b[31mОшибка во время обработки команды:\x1b[0m', err);
         }

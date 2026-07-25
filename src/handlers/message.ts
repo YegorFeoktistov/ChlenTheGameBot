@@ -300,7 +300,7 @@ export default async function (message: TelegramMessage) {
 
   // 12. Command /chlen OR plain text "член" / "chlen" / /chlenduel
   const parts = rawText.split(/\s+/);
-  const firstPart = parts[0].toLowerCase();
+  const firstPart = parts[0].toLowerCase().split('@')[0];
 
   const isChlenOrDuelCommand =
     firstPart === GameCommand.GAME_CHLEN_SLASH ||
