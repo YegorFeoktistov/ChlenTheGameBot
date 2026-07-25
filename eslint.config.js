@@ -31,7 +31,6 @@ export default [
       'no-console': 'off',
       'no-trailing-spaces': 'error',
       'no-mixed-spaces-and-tabs': 'error',
-      'indent': ['error', 2, { SwitchCase: 1 }],
       'eol-last': ['error', 'always'],
       'no-multiple-empty-lines': ['error', { max: 1, maxEOF: 0, maxBOF: 0 }],
       'padding-line-between-statements': [
