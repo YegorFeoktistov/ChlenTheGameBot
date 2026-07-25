@@ -1,5 +1,7 @@
 import tsParser from '@typescript-eslint/parser';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
+import prettierPlugin from 'eslint-plugin-prettier';
+import prettierConfig from 'eslint-config-prettier';
 
 export default [
   {
@@ -24,13 +26,14 @@ export default [
     },
     plugins: {
       '@typescript-eslint': tsPlugin,
+      'prettier': prettierPlugin,
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
+      ...prettierConfig.rules,
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-console': 'off',
-      'no-trailing-spaces': 'error',
-      'no-mixed-spaces-and-tabs': 'error',
+      'prettier/prettier': 'error',
       'eol-last': ['error', 'always'],
       'no-multiple-empty-lines': ['error', { max: 1, maxEOF: 0, maxBOF: 0 }],
       'padding-line-between-statements': [
