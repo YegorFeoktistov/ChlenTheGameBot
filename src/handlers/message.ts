@@ -404,7 +404,14 @@ export default async function (message: TelegramMessage) {
     }
 
     if (res.status === CommandStatus.SINGLE_PLAYER_WIN) {
-      await sendGameEndNotification(chatId, res.status, res.winnerName, res.turns, res.newRecord);
+      await sendGameEndNotification(
+        chatId,
+        res.status,
+        res.winnerName,
+        res.turns,
+        res.newRecord,
+        res.isDuel
+      );
       return;
     }
 
@@ -455,10 +462,11 @@ export default async function (message: TelegramMessage) {
       if (res.gameEnded) {
         await sendGameEndNotification(
           chatId,
-          'single_player_win',
+          CommandStatus.SINGLE_PLAYER_WIN,
           res.winnerName,
           res.turns,
-          res.newRecord
+          res.newRecord,
+          res.isDuel
         );
       }
     }

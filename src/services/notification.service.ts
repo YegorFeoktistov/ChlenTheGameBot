@@ -1,6 +1,7 @@
 import { api } from 'sdk';
 import { pluralizeTurns, pluralizeSeconds } from '../utils/pluralize.js';
 import { cleanUsername } from './user.service.js';
+import { CommandStatus } from '../utils/constants.js';
 
 export async function sendGameStartNotification(
   chatId: string,
@@ -53,26 +54,29 @@ export async function sendGameEndNotification(
   status: string,
   winnerName?: string | null,
   turnsCount?: number,
-  newRecord?: boolean
+  newRecord?: boolean,
+  isDuel = false
 ): Promise<void> {
-  if (status === 'sole_player_timeout') {
+  if (status === CommandStatus.SOLE_PLAYER_TIMEOUT) {
     await api.sendMessage({
       chat_id: chatId,
       text: 'Никто не осмелился сыграть с тобой в Член. Игра окончена.',
     });
-  } else if (status === 'all_excluded') {
+  } else if (status === CommandStatus.ALL_EXCLUDED) {
     await api.sendMessage({
       chat_id: chatId,
       text: 'Все участники признаны натуралами! Вы расстроили Член. Игра окончена.',
     });
-  } else if (status === 'single_player_win' || winnerName) {
+  } else if (status === CommandStatus.SINGLE_PLAYER_WIN || winnerName) {
     const turnStr = pluralizeTurns(turnsCount || 0);
     const recordMsg = newRecord ? ' (Новый рекорд! 🚀)' : '';
+    const endTitle = isDuel ? 'Член - дуэль окончена!' : 'Член - игра окончена!';
+    const countText = isDuel
+      ? `Дуэль длилась ${turnStr}${recordMsg}`
+      : `Игра длилась ${turnStr}${recordMsg}`;
     await api.sendMessage({
       chat_id: chatId,
-      text:
-        `Член - игра окончена! Победитель - ${winnerName}\n` +
-        `Игра длилась ${turnStr}${recordMsg}`,
+      text: `${endTitle} Победитель - ${winnerName}\n${countText}`,
     });
   }
 }

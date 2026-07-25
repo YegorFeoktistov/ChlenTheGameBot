@@ -12,6 +12,7 @@ import {
   sendSessionCooldownWarning,
   sendOutOfTurnWarning,
 } from '../src/services/notification.service.js';
+import { CommandStatus } from '../src/utils/constants.js';
 
 describe('Notification Service', () => {
   beforeEach(() => {
@@ -115,7 +116,7 @@ describe('Notification Service', () => {
   describe('sendGameEndNotification', () => {
     it('sends end message for sole player timeout', async () => {
       const spy = vi.spyOn(api, 'sendMessage');
-      await sendGameEndNotification('chat1', 'sole_player_timeout');
+      await sendGameEndNotification('chat1', CommandStatus.SOLE_PLAYER_TIMEOUT);
 
       expect(spy).toHaveBeenCalledWith({
         chat_id: 'chat1',
@@ -125,7 +126,7 @@ describe('Notification Service', () => {
 
     it('sends end message for all excluded', async () => {
       const spy = vi.spyOn(api, 'sendMessage');
-      await sendGameEndNotification('chat1', 'all_excluded');
+      await sendGameEndNotification('chat1', CommandStatus.ALL_EXCLUDED);
 
       expect(spy).toHaveBeenCalledWith({
         chat_id: 'chat1',
@@ -135,7 +136,7 @@ describe('Notification Service', () => {
 
     it('sends win message with regular text', async () => {
       const spy = vi.spyOn(api, 'sendMessage');
-      await sendGameEndNotification('chat1', 'success', 'Pasha', 5, false);
+      await sendGameEndNotification('chat1', CommandStatus.SUCCESS, 'Pasha', 5, false);
 
       expect(spy).toHaveBeenCalledWith({
         chat_id: 'chat1',
@@ -145,11 +146,21 @@ describe('Notification Service', () => {
 
     it('sends win message with record text', async () => {
       const spy = vi.spyOn(api, 'sendMessage');
-      await sendGameEndNotification('chat1', 'success', 'Pasha', 12, true);
+      await sendGameEndNotification('chat1', CommandStatus.SUCCESS, 'Pasha', 12, true);
 
       expect(spy).toHaveBeenCalledWith({
         chat_id: 'chat1',
         text: 'Член - игра окончена! Победитель - Pasha\nИгра длилась 12 ходов (Новый рекорд! 🚀)',
+      });
+    });
+
+    it('sends win message for duel with correct wording', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+      await sendGameEndNotification('chat1', CommandStatus.SUCCESS, 'Pasha', 8, false, true);
+
+      expect(spy).toHaveBeenCalledWith({
+        chat_id: 'chat1',
+        text: 'Член - дуэль окончена! Победитель - Pasha\nДуэль длилась 8 ходов',
       });
     });
   });
