@@ -27,6 +27,7 @@ import { recordAutomaticWin } from './game_rules.js';
 export interface CommandResult {
   status: CommandStatus;
   gameStarted?: boolean;
+  isDuel?: boolean;
   outcome?: string;
   gameEnded?: boolean;
   winnerName?: string | null;
@@ -444,6 +445,7 @@ export async function handleGameCommand(
   return {
     status: CommandStatus.SUCCESS,
     gameStarted,
+    isDuel: session.isDuel === 1,
     outcome,
     gameEnded,
     winnerName: gameEnded ? userDisplayName : null,

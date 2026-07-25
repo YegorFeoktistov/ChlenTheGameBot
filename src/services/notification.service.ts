@@ -4,17 +4,19 @@ import { cleanUsername } from './user.service.js';
 
 export async function sendGameStartNotification(
   chatId: string,
-  subscribers: string[]
+  subscribers: string[],
+  isDuel = false
 ): Promise<void> {
   let subText = '';
-  if (subscribers && subscribers.length > 0) {
+  if (!isDuel && subscribers && subscribers.length > 0) {
     const subList = subscribers.map((u) => `@${cleanUsername(u)}`);
     const verb = subList.length === 1 ? 'лови' : 'ловите';
     subText = `\n${subList.join(' ')} - ${verb} Член!`;
   }
+  const text = isDuel ? 'Член - дуэль началась!' : `Член - игра началась!${subText}`;
   await api.sendMessage({
     chat_id: chatId,
-    text: `Член - игра началась!${subText}`,
+    text,
   });
 }
 

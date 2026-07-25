@@ -440,7 +440,7 @@ export default async function (message: TelegramMessage) {
     if (res.status === CommandStatus.SUCCESS) {
       if (res.gameStarted) {
         const subs = await getSubscribers(chatId);
-        await sendGameStartNotification(chatId, subs);
+        await sendGameStartNotification(chatId, subs, res.isDuel);
       }
 
       const isCommand = rawText.startsWith('/');
