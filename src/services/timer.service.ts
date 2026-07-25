@@ -43,6 +43,18 @@ export async function processTurnTimeout(chatId: string, myId?: number): Promise
         return;
       }
 
+      const sessionRows = (await db
+        .select()
+        .from(chatGameSessions)
+        .where(eq(chatGameSessions.chatId, chatId))
+        .run()) as GameSessionRecord[];
+      const session = sessionRows && sessionRows.length > 0 ? sessionRows[0] : null;
+
+      if (session && session.isActive === 1 && session.isDuel === 1) {
+        clearTurnTimeout(chatId);
+        return;
+      }
+
       const mode = await getQueueMode(chatId);
       if (mode !== 1) {
         clearTurnTimeout(chatId);

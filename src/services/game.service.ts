@@ -68,6 +68,31 @@ async function handleOutOfTurnWarning(chatId: string, userId: string): Promise<C
   return { status: CommandStatus.WARNING };
 }
 
+async function handleDuelInterference(chatId: string, userId: string): Promise<CommandResult> {
+  const warnedRows = (await db
+    .select()
+    .from(chatWarnedUsers)
+    .where(and(eq(chatWarnedUsers.chatId, chatId), eq(chatWarnedUsers.userId, userId)))
+    .run()) as WarnedUserRecord[];
+
+  const isWarned = warnedRows && warnedRows.length > 0;
+
+  if (isWarned && process.env.REPL_MODE !== 'true') {
+    return { status: CommandStatus.IGNORED };
+  }
+
+  await db
+    .insert(chatWarnedUsers)
+    .values({ chatId, userId })
+    .onConflictDoUpdate({
+      target: [chatWarnedUsers.chatId, chatWarnedUsers.userId],
+      set: { chatId, userId },
+    })
+    .run();
+
+  return { status: CommandStatus.DUEL_INTERFERENCE };
+}
+
 export async function terminateGameSession(
   chatId: string,
   nowUnix = Math.floor(Date.now() / 1000)
@@ -81,6 +106,10 @@ export async function terminateGameSession(
       sessionMessagesCount: 0,
       sessionEndedAt: nowUnix,
       currentTurnStartedAt: null,
+      isDuel: 0,
+      duelInitiatorId: null,
+      duelOpponentId: null,
+      duelIsAccepted: 0,
     })
     .onConflictDoUpdate({
       target: chatGameSessions.chatId,
@@ -90,6 +119,10 @@ export async function terminateGameSession(
         sessionMessagesCount: 0,
         sessionEndedAt: nowUnix,
         currentTurnStartedAt: null,
+        isDuel: 0,
+        duelInitiatorId: null,
+        duelOpponentId: null,
+        duelIsAccepted: 0,
       },
     })
     .run();
@@ -98,6 +131,49 @@ export async function terminateGameSession(
   await db.delete(chatSkillUsers).where(eq(chatSkillUsers.chatId, chatId)).run();
   await db.delete(chatStatusEffectUsers).where(eq(chatStatusEffectUsers.chatId, chatId)).run();
   clearTurnTimeout(chatId);
+}
+
+export async function initiateDuelSession(
+  chatId: string,
+  initiatorId: string,
+  opponentId: string,
+  nowUnix = Math.floor(Date.now() / 1000)
+): Promise<void> {
+  await clearQueueSession(chatId);
+  await db.delete(chatSkillUsers).where(eq(chatSkillUsers.chatId, chatId)).run();
+  await db.delete(chatStatusEffectUsers).where(eq(chatStatusEffectUsers.chatId, chatId)).run();
+  await db.delete(chatWarnedUsers).where(eq(chatWarnedUsers.chatId, chatId)).run();
+  clearTurnTimeout(chatId);
+
+  await db
+    .insert(chatGameSessions)
+    .values({
+      chatId,
+      isActive: 1,
+      lastUserId: null,
+      sessionMessagesCount: 0,
+      sessionEndedAt: null,
+      currentTurnStartedAt: nowUnix,
+      isDuel: 1,
+      duelInitiatorId: initiatorId,
+      duelOpponentId: opponentId,
+      duelIsAccepted: 0,
+    })
+    .onConflictDoUpdate({
+      target: chatGameSessions.chatId,
+      set: {
+        isActive: 1,
+        lastUserId: null,
+        sessionMessagesCount: 0,
+        sessionEndedAt: null,
+        currentTurnStartedAt: nowUnix,
+        isDuel: 1,
+        duelInitiatorId: initiatorId,
+        duelOpponentId: opponentId,
+        duelIsAccepted: 0,
+      },
+    })
+    .run();
 }
 
 export async function abortGameSession(chatId: string): Promise<{ wasActive: boolean }> {
@@ -149,6 +225,29 @@ export async function handleGameCommand(
 
   let gameStarted = false;
 
+  // Duel checks
+  if (session.isActive === 1 && session.isDuel === 1) {
+    if (session.duelIsAccepted === 0) {
+      if (userId !== session.duelOpponentId) {
+        return handleDuelInterference(chatId, userId);
+      }
+      // Opponent accepts the duel!
+      await db
+        .update(chatGameSessions)
+        .set({ duelIsAccepted: 1, currentTurnStartedAt: nowUnix, lastUserId: null })
+        .where(eq(chatGameSessions.chatId, chatId))
+        .run();
+      session.duelIsAccepted = 1;
+      session.currentTurnStartedAt = nowUnix;
+      session.lastUserId = null;
+      gameStarted = true;
+    } else {
+      if (userId !== session.duelInitiatorId && userId !== session.duelOpponentId) {
+        return handleDuelInterference(chatId, userId);
+      }
+    }
+  }
+
   // 1. Check 10-second session cooldown and initialize state if starting a new game
   if (!session.isActive) {
     if (session.sessionEndedAt) {
@@ -174,7 +273,13 @@ export async function handleGameCommand(
   let strictResSkips: { displayName: string; isExcluded: boolean; nextUserMention?: string }[] = [];
 
   // 2. Mode-specific turn order & anti-spam evaluation
-  if (queueMode === 1) {
+  if (session.isDuel === 1) {
+    // Duel always runs on non-strict queue logic
+    if (session.lastUserId && session.lastUserId === userId) {
+      return handleOutOfTurnWarning(chatId, userId);
+    }
+    isFirstMoveForUser = await registerNonStrictPlayer(chatId, userId, nowUnix);
+  } else if (queueMode === 1) {
     const strictRes = await evaluateStrictTurn(
       chatId,
       userId,

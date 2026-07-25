@@ -31,6 +31,7 @@ export enum CommandStatus {
   ALL_EXCLUDED = 'all_excluded',
   SOLE_PLAYER_TIMEOUT = 'sole_player_timeout',
   SINGLE_PLAYER_WIN = 'single_player_win',
+  DUEL_INTERFERENCE = 'duel_interference',
 }
 
 export enum StrictTurnStatus {
@@ -49,3 +50,29 @@ export const SESSION_COOLDOWN_SECONDS = 10;
 export const TURN_TIMEOUT_SECONDS = 30;
 export const TURN_TIMEOUT_MS = 30100;
 export const MAX_SKIP_COUNT = 3;
+
+export enum GameCommand {
+  START = '/start',
+  BOARD = '/chlenboard',
+  LONGEST = '/longestchlen',
+  CLASSES = '/chlenclasses',
+  BECOME_CLASS = '/becomechlen',
+  WHICH_CLASS = '/whichchlen',
+  SUBSCRIBE = '/chlensub',
+  UNSUBSCRIBE = '/chlenunsub',
+  SKILL = '/chlenskill',
+  QUEUE = '/chlenqueue',
+  ABORT = '/abortchlen',
+  DUEL = '/chlenduel',
+  GAME_CHLEN_SLASH = '/chlen',
+  GAME_CHLEN_RU = 'член',
+  GAME_CHLEN_EN = 'chlen',
+}
+
+export enum DuelDeclineWord {
+  RU = 'нет',
+  EN_NO = 'no',
+  EN_NET = 'net',
+}
+
+export const DUEL_DECLINE_WORDS: readonly string[] = Object.values(DuelDeclineWord);

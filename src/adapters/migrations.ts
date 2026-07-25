@@ -120,6 +120,28 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    name: '005_add_duel_columns_to_sessions',
+    up: (db) => {
+      const columns = db.pragma('table_info(chat_game_sessions)') as { name: string }[];
+      const hasIsDuel = columns.some((c) => c.name === 'is_duel');
+      if (!hasIsDuel) {
+        db.exec('ALTER TABLE chat_game_sessions ADD COLUMN is_duel INTEGER DEFAULT 0;');
+      }
+      const hasInitiator = columns.some((c) => c.name === 'duel_initiator_id');
+      if (!hasInitiator) {
+        db.exec('ALTER TABLE chat_game_sessions ADD COLUMN duel_initiator_id TEXT;');
+      }
+      const hasOpponent = columns.some((c) => c.name === 'duel_opponent_id');
+      if (!hasOpponent) {
+        db.exec('ALTER TABLE chat_game_sessions ADD COLUMN duel_opponent_id TEXT;');
+      }
+      const hasAccepted = columns.some((c) => c.name === 'duel_is_accepted');
+      if (!hasAccepted) {
+        db.exec('ALTER TABLE chat_game_sessions ADD COLUMN duel_is_accepted INTEGER DEFAULT 0;');
+      }
+    },
+  },
 ];
 
 /**

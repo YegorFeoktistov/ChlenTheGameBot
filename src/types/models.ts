@@ -34,6 +34,10 @@ export interface GameSessionRecord {
   sessionMessagesCount: number;
   sessionEndedAt: number | null;
   currentTurnStartedAt: number | null;
+  isDuel?: number;
+  duelInitiatorId?: string | null;
+  duelOpponentId?: string | null;
+  duelIsAccepted?: number;
 }
 
 export interface WarnedUserRecord {

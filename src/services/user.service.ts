@@ -2,7 +2,7 @@ import { db } from 'sdk';
 import { chats, users, chatSubscribers } from '../schema.js';
 import { eq, and } from 'sdk/db';
 
-import type { SubscriberRecord } from '../types/models.js';
+import type { SubscriberRecord, UserRecord } from '../types/models.js';
 
 export function cleanUsername(username: string): string {
   if (!username) return '';
@@ -101,4 +101,20 @@ export async function getSubscribers(chatId: string): Promise<string[]> {
     .run()) as SubscriberRecord[];
 
   return rows.map((r) => r.username).filter(Boolean);
+}
+
+export async function getUserByUsername(username: string): Promise<UserRecord | undefined> {
+  const cleaned = cleanUsername(username);
+  const rows = (await db
+    .select()
+    .from(users)
+    .where(eq(users.username, cleaned))
+    .run()) as UserRecord[];
+  if (rows.length > 0) return rows[0];
+
+  // Fallback to case-insensitive lookup
+  const all = (await db.select().from(users).run()) as UserRecord[];
+  return all.find(
+    (u) => u.username && cleanUsername(u.username).toLowerCase() === cleaned.toLowerCase()
+  );
 }
