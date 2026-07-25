@@ -48,6 +48,16 @@ describe('Notification Service', () => {
         text: 'Член - игра началась!\n@Pasha - лови Член!',
       });
     });
+
+    it('sends duel start message without notifying subscribers', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+      await sendGameStartNotification('chat1', ['Pasha', 'Yegor'], true);
+
+      expect(spy).toHaveBeenCalledWith({
+        chat_id: 'chat1',
+        text: 'Член - дуэль началась!',
+      });
+    });
   });
 
   describe('sendSkipNotifications', () => {

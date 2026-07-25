@@ -257,7 +257,7 @@ describe('Duel (Дуэль) Feature', () => {
     expect(mockQueuePlayers['chat1_user2']).toBeDefined();
     expect(spy).toHaveBeenCalledWith({
       chat_id: 'chat1',
-      text: 'Член - игра началась!',
+      text: 'Член - дуэль началась!',
     });
   });
 

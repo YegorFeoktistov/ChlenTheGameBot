@@ -1,19 +1,20 @@
-# Член: the Game - Telegram Bot (v1.1.1)
+# Член: the Game - Telegram Bot (v1.2.1)
 
 Modern, high-performance Node.js & TypeScript Telegram Bot for group chats running a fun interactive turn-based luck game.
 
 ## Game Rules
+
 1. **Starting the Game**: Sending `/chlen` (or writing the word `член` / `chlen` in plain text) starts a new game session and announces: `Член - игра началась!`.
 2. **Turns**: When a user submits `/chlen` or sends `член` / `chlen` (case-insensitive plain text), they roll for an outcome (a player cannot win on the 1st command starting a session):
    - **90% Probability**: The bot replies with `Член`.
    - **10% Probability**: The bot replies with `Я победил`.
 3. **Ending the Game**: When a user rolls `Я победил`, the session ends with: `Член - игра окончена! Победитель - {name}`.
 4. **Queue Modes & Anti-Spam (`/chlenqueue`)**:
-   - `/chlenqueue 1` (*Строгий Член*, default): Strict turn sequence enforced (`P1 -> P2 -> P3 -> P1...`).
+   - `/chlenqueue 1` (_Строгий Член_, default): Strict turn sequence enforced (`P1 -> P2 -> P3 -> P1...`).
      - **Proactive 15s Timeout**: If the turn player does not respond in 15s, their turn is automatically skipped (`{name} - ты обронил Член!\nСледующим ходит {@username}.`).
      - **Order 69 Exclusion & Auto-End**: 3 skips in a session exclude the player (`Обнаружен натурал - {name}! Выполнить Приказ 69!`). If all session participants are excluded by Order 69, the session auto-terminates (`Все участники признаны натуралами! Вы расстроили Член. Игра окончена.`).
      - **Active Session Lock**: Changing mode during an active game is blocked with `Не мешай Члену работать!`.
-   - `/chlenqueue 0` (*Нестрогий Член*): Standard anti-spam prevents consecutive turns by the same user (`Дождись очереди`).
+   - `/chlenqueue 0` (_Нестрогий Член_): Standard anti-spam prevents consecutive turns by the same user (`Дождись очереди`).
 5. **Aborting Active Games (`/abortchlen`)**:
    - `/abortchlen`: Aborts the active game session immediately (`Вы оборвали Член. Игра окончена.`). If no game is active, replies `Нет активного Члена.`.
 6. **Duel Mode (Дуэль)**:
@@ -21,7 +22,7 @@ Modern, high-performance Node.js & TypeScript Telegram Bot for group chats runni
    - **Acceptance/Refusal**: The opponent can accept the challenge by making a play move (`член` / `chlen` / `/chlen`), which immediately starts the game and announces `Член - игра началась!`. Alternatively, the opponent can refuse by replying with `нет`, `no`, or `net`, which terminates the challenge.
    - **Duel Rules**: Duels always bypass strict queue/turn timeout rules and run strictly on non-strict (alternating turn) order between the two players. The first move of both the opponent (on acceptance) and the initiator does not allow winning, but subsequent turns can win. Moves from third-party players are blocked and ignored (warned once per user).
 7. **Classes & Skills System**:
-   - `/chlenclasses`: View available game classes (*Членокнижник* (наводит Членослабость), *Членомант*, *Членодин*, *Охотник на Члены*, *Мастер тысячи Членов*).
+   - `/chlenclasses`: View available game classes (_Членокнижник_ (наводит Членослабость), _Членомант_, _Членодин_, _Охотник на Члены_, _Мастер тысячи Членов_).
    - `/becomechlen <1-5>`: Choose your game class.
    - `/whichchlen`: View your assigned class.
    - `/chlenskill`: Activate your class ability once per game session.
@@ -36,17 +37,21 @@ Modern, high-performance Node.js & TypeScript Telegram Bot for group chats runni
 ## Installation & Setup
 
 ### Prerequisites
+
 - Node.js 20+ (tested on Node.js v24.18.0)
 - npm 10+
 - Telegram Bot Token from [@BotFather](https://t.me/BotFather)
 
 ### Installation
+
 1. **Install Dependencies**:
+
    ```bash
    npm install
    ```
 
 2. **Configure Environment**:
+
    ```bash
    cp .env.example .env
    # Set TELEGRAM_BOT_TOKEN in .env
@@ -91,11 +96,13 @@ Modern, high-performance Node.js & TypeScript Telegram Bot for group chats runni
 ## Running the Bot
 
 ### Local / Virtual Machine Execution
+
 ```bash
 npm start
 ```
 
 ### Telegram Serverless Deployment
+
 ```bash
 npm run deploy
 npm run migrate
