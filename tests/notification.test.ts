@@ -150,7 +150,9 @@ describe('Notification Service', () => {
       await sendDuelInvitation('chat1', 'Yegor', 'Pasha');
       expect(spy).toHaveBeenCalledWith({
         chat_id: 'chat1',
-        text: 'Yegor вызывает тебя на дуэль! Pasha, примешь ли ты вызов?',
+        text:
+          `Yegor вызывает тебя на дуэль! Pasha, примешь ли ты вызов?\n` +
+          `(Чтобы принять - сделай ход, чтобы отказаться - напиши 'нет')`,
       });
     });
 

@@ -82,7 +82,9 @@ export async function sendDuelInvitation(
 ): Promise<void> {
   await api.sendMessage({
     chat_id: chatId,
-    text: `${initiatorName} вызывает тебя на дуэль! ${opponentName}, примешь ли ты вызов?`,
+    text:
+      `${initiatorName} вызывает тебя на дуэль! ${opponentName}, примешь ли ты вызов?\n` +
+      `(Чтобы принять - сделай ход, чтобы отказаться - напиши 'нет')`,
   });
 }
 

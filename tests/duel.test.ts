@@ -175,7 +175,9 @@ describe('Duel (Дуэль) Feature', () => {
 
     expect(spy).toHaveBeenCalledWith({
       chat_id: 'chat1',
-      text: 'Yegor Feoktistov вызывает тебя на дуэль! Pasha Durov, примешь ли ты вызов?',
+      text:
+        'Yegor Feoktistov вызывает тебя на дуэль! Pasha Durov, примешь ли ты вызов?\n' +
+        "(Чтобы принять - сделай ход, чтобы отказаться - напиши 'нет')",
     });
   });
 
