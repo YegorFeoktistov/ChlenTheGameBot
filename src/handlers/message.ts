@@ -301,6 +301,7 @@ export default async function (message: TelegramMessage) {
   // 12. Command /chlen OR plain text "член" / "chlen" / /chlenduel
   const parts = rawText.split(/\s+/);
   const firstPart = parts[0].toLowerCase().split('@')[0];
+  const lastPart = parts[parts.length - 1];
 
   const isChlenOrDuelCommand =
     firstPart === GameCommand.GAME_CHLEN_SLASH ||
@@ -308,15 +309,22 @@ export default async function (message: TelegramMessage) {
     firstPart === GameCommand.GAME_CHLEN_EN ||
     firstPart === GameCommand.DUEL;
 
-  const isChlenInside = [GameCommand.GAME_CHLEN_RU, GameCommand.GAME_CHLEN_EN].some((chlen) =>
-    rawText.includes(chlen)
-  );
+  const isChlenInside =
+    !rawText.startsWith('/') &&
+    [GameCommand.GAME_CHLEN_RU, GameCommand.GAME_CHLEN_EN].some((chlen) =>
+      lowerText.includes(chlen)
+    );
 
-  if (isChlenOrDuelCommand || (isChlenInside && !(session && session.isActive === 1))) {
-    const isDuelInitiationCmd = firstPart === GameCommand.DUEL;
-    const hasOpponentParam = parts.length > 1 && parts[1].trim().length > 0;
+  const isDuelInitiationCmd = firstPart === GameCommand.DUEL;
+  const hasOpponentTagAtEnd = parts.length > 1 && lastPart.startsWith('@');
+  const hasChlenKeyword = isChlenOrDuelCommand || isChlenInside;
 
-    if (isDuelInitiationCmd || (hasOpponentParam && parts[1].startsWith('@'))) {
+  const isDuelAttempt = isDuelInitiationCmd || (hasChlenKeyword && hasOpponentTagAtEnd);
+  const canStartGameFromMention = isChlenInside && !(session && session.isActive === 1);
+
+  if (isChlenOrDuelCommand || isDuelAttempt || canStartGameFromMention) {
+    if (isDuelAttempt) {
+      const hasOpponentParam = parts.length > 1 && lastPart.trim().length > 0;
       if (!hasOpponentParam) {
         await api.sendMessage({
           chat_id: chatId,
@@ -326,8 +334,7 @@ export default async function (message: TelegramMessage) {
         return;
       }
 
-      const opponentUsernameRaw = parts[1];
-      const opponentUsernameClean = opponentUsernameRaw.replace(/^@+/, '');
+      const opponentUsernameClean = lastPart.replace(/^@+/, '');
 
       // Check if session is already active (either normal game or duel)
       if (session && session.isActive === 1) {
