@@ -308,7 +308,11 @@ export default async function (message: TelegramMessage) {
     firstPart === GameCommand.GAME_CHLEN_EN ||
     firstPart === GameCommand.DUEL;
 
-  if (isChlenOrDuelCommand) {
+  const isChlenInside = [GameCommand.GAME_CHLEN_RU, GameCommand.GAME_CHLEN_EN].some((chlen) =>
+    rawText.includes(chlen)
+  );
+
+  if (isChlenOrDuelCommand || (isChlenInside && !(session && session.isActive === 1))) {
     const isDuelInitiationCmd = firstPart === GameCommand.DUEL;
     const hasOpponentParam = parts.length > 1 && parts[1].trim().length > 0;
 
