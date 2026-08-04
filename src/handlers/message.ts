@@ -35,7 +35,13 @@ import {
 } from '../services/notification.service.js';
 import { chatGameSessions, chatWarnedUsers } from '../schema.js';
 import { eq, and } from 'sdk/db';
-import { CommandStatus, ChlenClass, GameCommand, DUEL_DECLINE_WORDS } from '../utils/constants.js';
+import {
+  CommandStatus,
+  ChlenClass,
+  GameCommand,
+  DUEL_DECLINE_WORDS,
+  SESSION_COOLDOWN_SECONDS,
+} from '../utils/constants.js';
 import { withChatLock } from '../utils/mutex.js';
 import type { TelegramMessage } from '../types/sdk.d.js';
 import type { GameSessionRecord, WarnedUserRecord } from '../types/models.js';
@@ -190,31 +196,82 @@ export default async function (message: TelegramMessage) {
 
   // 9. Command /chlenskill
   if (lowerText.startsWith(GameCommand.SKILL)) {
-    const skillResult = await getUserSkillText(chatId, userId);
-    if (!skillResult) {
-      await api.sendMessage({
-        chat_id: chatId,
-        text: `${userDisplayName} ещё не выбрал класс. Используй ${GameCommand.BECOME_CLASS}, чтобы выбрать класс.`,
-      });
-      return;
-    }
+    await withChatLock(chatId, async () => {
+      const sessionRows = (await db
+        .select()
+        .from(chatGameSessions)
+        .where(eq(chatGameSessions.chatId, chatId))
+        .run()) as GameSessionRecord[];
+      const session = sessionRows && sessionRows.length > 0 ? sessionRows[0] : null;
 
-    if (skillResult.alreadyUsed) {
-      await api.sendMessage({
-        chat_id: chatId,
-        text: `${userDisplayName} уже использовал свою способность в этой игре!`,
-        reply_to_message_id: message.message_id,
-      });
-      return;
-    }
+      // Gate 1: active game session required
+      if (!session || session.isActive !== 1) {
+        if (
+          session &&
+          session.sessionEndedAt != null &&
+          Math.floor(Date.now() / 1000) - session.sessionEndedAt < SESSION_COOLDOWN_SECONDS
+        ) {
+          await api.sendMessage({
+            chat_id: chatId,
+            text: 'Игра только что закончилась. Дай члену отдохнуть.',
+            reply_to_message_id: message.message_id,
+          });
+          return;
+        }
+        await api.sendMessage({
+          chat_id: chatId,
+          text: 'Нет активной игры. Начни игру командой /chlen.',
+          reply_to_message_id: message.message_id,
+        });
+        return;
+      }
 
-    await recordSkillUsed(chatId, userId);
+      // Gate 2: pending duel blocks the skill
+      if (session.isActive === 1 && session.isDuel === 1 && session.duelIsAccepted === 0) {
+        await api.sendMessage({
+          chat_id: chatId,
+          text: 'Нельзя использовать способность, пока дуэль не принята.',
+          reply_to_message_id: message.message_id,
+        });
+        return;
+      }
 
-    const skillClass = await getUserClass(chatId, userId);
-    if (skillClass === ChlenClass.CHLENOKNIZHNIK) {
-      const targetText = rawText.split(/\s+/).slice(1).join(' ').trim();
-      const targetResult = await applyWeaknessToTarget(chatId, userId, targetText);
-      if (!targetResult.success) {
+      // Class check
+      const skillResult = await getUserSkillText(chatId, userId);
+      if (!skillResult) {
+        await api.sendMessage({
+          chat_id: chatId,
+          text: `${userDisplayName} ещё не выбрал класс. Используй ${GameCommand.BECOME_CLASS}, чтобы выбрать класс.`,
+          reply_to_message_id: message.message_id,
+        });
+        return;
+      }
+
+      // Cooldown check
+      if (skillResult.alreadyUsed) {
+        await api.sendMessage({
+          chat_id: chatId,
+          text: `${userDisplayName} уже использовал свою способность в этой игре!`,
+          reply_to_message_id: message.message_id,
+        });
+        return;
+      }
+
+      // Determine class before recording skill usage
+      const skillClass = await getUserClass(chatId, userId);
+
+      if (skillClass === ChlenClass.CHLENOKNIZHNIK) {
+        const targetText = rawText.split(/\s+/).slice(1).join(' ').trim();
+        const targetResult = await applyWeaknessToTarget(chatId, userId, targetText);
+        if (!targetResult.success) {
+          await api.sendMessage({
+            chat_id: chatId,
+            text: targetResult.message,
+            reply_to_message_id: message.message_id,
+          });
+          return;
+        }
+        await recordSkillUsed(chatId, userId);
         await api.sendMessage({
           chat_id: chatId,
           text: targetResult.message,
@@ -222,18 +279,14 @@ export default async function (message: TelegramMessage) {
         });
         return;
       }
+
+      await recordSkillUsed(chatId, userId);
       await api.sendMessage({
         chat_id: chatId,
-        text: targetResult.message,
+        text: `${userDisplayName} использует способность: ${skillResult.skillText}`,
         reply_to_message_id: message.message_id,
       });
       return;
-    }
-
-    await api.sendMessage({
-      chat_id: chatId,
-      text: `${userDisplayName} использует способность: ${skillResult.skillText}`,
-      reply_to_message_id: message.message_id,
     });
     return;
   }

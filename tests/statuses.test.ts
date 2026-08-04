@@ -87,6 +87,9 @@ describe('Status Effects', () => {
               if (!tbl || tbl.name === 'chat_queue_players') {
                 mockQueuePlayers = {};
               }
+              if (tbl && tbl.name === 'chat_status_effect_users') {
+                mockStatusEffects = {};
+              }
             },
           }),
         }) as unknown as ReturnType<typeof db.delete>
@@ -151,13 +154,13 @@ describe('Status Effects', () => {
     });
 
     it('gives 5% win chance with 1 "Членослабость" debuff', async () => {
-      setMockStatusEffects('chat1', 'user1', StatusEffectId.WEAKNESS, 1);
-
       // Turn 1 - Pasha starts (always wins on first move)
       const r1 = await handleGameCommand('chat1', 'user1', 'Pasha', 0.5);
       expect(r1.status).toBe(CommandStatus.SUCCESS);
       expect(r1.gameStarted).toBe(true);
       expect(r1.outcome).toBe('Член');
+
+      setMockStatusEffects('chat1', 'user1', StatusEffectId.WEAKNESS, 1);
 
       // Turn 2 - User2 joins
       const r2 = await handleGameCommand('chat1', 'user2', 'SecondPerson', 0.5);
@@ -172,14 +175,13 @@ describe('Status Effects', () => {
     });
 
     it('gives 2.5% win chance with 2 "Членослабость" debuffs', async () => {
-      setMockStatusEffects('chat1', 'user1', StatusEffectId.WEAKNESS, 2);
-      setMockStatusEffects('chat1', 'user1', StatusEffectId.WEAKNESS, 1);
-
       // Turn 1
       const r1 = await handleGameCommand('chat1', 'user1', 'Pasha', 0.5);
       expect(r1.status).toBe(CommandStatus.SUCCESS);
       expect(r1.gameStarted).toBe(true);
       expect(r1.outcome).toBe('Член');
+
+      setMockStatusEffects('chat1', 'user1', StatusEffectId.WEAKNESS, 2);
 
       // Turn 2
       const r2 = await handleGameCommand('chat1', 'user2', 'SecondPerson', 0.5);
@@ -194,12 +196,12 @@ describe('Status Effects', () => {
     });
 
     it('blocks win when roll exceeds reduced chance', async () => {
-      setMockStatusEffects('chat1', 'user1', StatusEffectId.WEAKNESS, 1);
-
       // Turn 1
       const r1 = await handleGameCommand('chat1', 'user1', 'Pasha', 0.5);
       expect(r1.status).toBe(CommandStatus.SUCCESS);
       expect(r1.gameStarted).toBe(true);
+
+      setMockStatusEffects('chat1', 'user1', StatusEffectId.WEAKNESS, 1);
 
       // Turn 2
       const r2 = await handleGameCommand('chat1', 'user2', 'SecondPerson', 0.5);
@@ -214,12 +216,12 @@ describe('Status Effects', () => {
     });
 
     it('blocks win when roll equals reduced chance', async () => {
-      setMockStatusEffects('chat1', 'user1', StatusEffectId.WEAKNESS, 1);
-
       // Turn 1
       const r1 = await handleGameCommand('chat1', 'user1', 'Pasha', 0.5);
       expect(r1.status).toBe(CommandStatus.SUCCESS);
       expect(r1.gameStarted).toBe(true);
+
+      setMockStatusEffects('chat1', 'user1', StatusEffectId.WEAKNESS, 1);
 
       // Turn 2
       const r2 = await handleGameCommand('chat1', 'user2', 'SecondPerson', 0.5);
@@ -230,6 +232,14 @@ describe('Status Effects', () => {
       expect(r3.status).toBe(CommandStatus.SUCCESS);
       expect(r3.gameEnded).toBe(false);
       expect(r3.outcome).toBe('Член');
+    });
+
+    it('clears status effects on fresh game start', async () => {
+      setMockStatusEffects('chat1', 'user1', StatusEffectId.WEAKNESS, 3);
+
+      await handleGameCommand('chat1', 'user1', 'Pasha', 0.5);
+
+      expect(mockStatusEffects).toEqual({});
     });
   });
 });

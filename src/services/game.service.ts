@@ -260,6 +260,7 @@ export async function handleGameCommand(
     // Clean up timers and database queue for a fresh game
     await clearQueueSession(chatId);
     await db.delete(chatSkillUsers).where(eq(chatSkillUsers.chatId, chatId)).run();
+    await db.delete(chatStatusEffectUsers).where(eq(chatStatusEffectUsers.chatId, chatId)).run();
     clearTurnTimeout(chatId);
 
     session.isActive = 1;

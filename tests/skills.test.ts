@@ -59,16 +59,27 @@ describe('Skills Service', () => {
       () =>
         ({
           from: (tbl: { name?: string }) => ({
-            where: () => ({
+            where: (cond?: unknown) => ({
               run: async () => {
                 if (tbl && tbl.name === 'chat_user_stats') return Object.values(mockUserStats);
                 if (tbl && tbl.name === 'chat_skill_users') return Object.values(mockSkillUsers);
-                if (tbl && tbl.name === 'users') return Object.values(mockUsers);
+                if (tbl && tbl.name === 'users') {
+                  if (cond && typeof cond === 'object') {
+                    const c = cond as { params?: unknown[]; b?: unknown };
+                    const username = String(c.params?.[0] ?? c.b ?? '');
+                    return Object.values(mockUsers).filter((u) => u.username === username);
+                  }
+                  return Object.values(mockUsers);
+                }
                 if (tbl && tbl.name === 'chat_status_effect_users')
                   return Object.values(mockStatusEffects);
                 return [];
               },
             }),
+            run: async () => {
+              if (tbl && tbl.name === 'users') return Object.values(mockUsers);
+              return [];
+            },
           }),
         }) as unknown as ReturnType<typeof db.select>
     );
@@ -169,14 +180,41 @@ describe('Skills Service', () => {
       expect(mockStatusEffects[key].count).toBe(1);
     });
 
-    it('applies weakness to target by numeric ID', async () => {
-      mockUsers['2'] = { id: '2', username: null, firstName: 'Numeric', lastName: null };
+    it('rejects bare numeric ID target', async () => {
+      const res = await applyWeaknessToTarget('chat1', 'user1', '12345');
+      expect(res.success).toBe(false);
+      expect(res.message).toContain('Неверная цель');
+      expect(mockStatusEffects).toEqual({});
+    });
 
-      const res = await applyWeaknessToTarget('chat1', 'user1', '2');
+    it('rejects bare name target', async () => {
+      const res = await applyWeaknessToTarget('chat1', 'user1', 'targetuser');
+      expect(res.success).toBe(false);
+      expect(res.message).toContain('Неверная цель');
+      expect(mockStatusEffects).toEqual({});
+    });
+
+    it('returns usage message when target is empty', async () => {
+      const res = await applyWeaknessToTarget('chat1', 'user1', '');
+      expect(res.success).toBe(false);
+      expect(res.message).toContain('chlenskill');
+      expect(res.message).toContain('@username');
+      expect(mockStatusEffects).toEqual({});
+    });
+
+    it('resolves mixed-case @username via case-insensitive fallback', async () => {
+      mockUsers['target1'] = {
+        id: 'target1',
+        username: 'targetuser',
+        firstName: 'Target',
+        lastName: null,
+      };
+
+      const res = await applyWeaknessToTarget('chat1', 'user1', '@TARGETUSER');
       expect(res.success).toBe(true);
-      expect(res.message).toContain('Numeric');
+      expect(res.message).toContain('Target');
 
-      const key = 'chat1_2_Членослабость';
+      const key = 'chat1_target1_Членослабость';
       expect(mockStatusEffects[key]).toBeDefined();
       expect(mockStatusEffects[key].count).toBe(1);
     });
@@ -184,7 +222,8 @@ describe('Skills Service', () => {
     it('fails when target not found', async () => {
       const res = await applyWeaknessToTarget('chat1', 'user1', '@nonexistent');
       expect(res.success).toBe(false);
-      expect(res.message).toContain('Цель не найдена');
+      expect(res.message).toBe('Цель не найдена. Укажите @username.');
+      expect(mockStatusEffects).toEqual({});
     });
 
     it('fails when targeting self', async () => {
@@ -193,6 +232,7 @@ describe('Skills Service', () => {
       const res = await applyWeaknessToTarget('chat1', 'user1', '@me');
       expect(res.success).toBe(false);
       expect(res.message).toContain('Нельзя наложить Членослабость на себя');
+      expect(mockStatusEffects).toEqual({});
     });
 
     it('stacks multiple weakness instances', async () => {
