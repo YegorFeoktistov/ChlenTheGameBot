@@ -1,5 +1,6 @@
 export enum StatusEffectId {
   WEAKNESS = 'Членослабость',
+  BUFF = 'Членосила',
 }
 
 export enum ChlenClass {

@@ -14,7 +14,7 @@ import {
   SESSION_COOLDOWN_SECONDS,
   GAME_WIN_CHANCE,
 } from '../utils/constants.js';
-import { getStatusEffects } from './statusEffects.service.js';
+import { getStatusEffects, removeStatusEffect } from './statusEffects.service.js';
 import {
   getQueueMode,
   evaluateStrictTurn,
@@ -393,7 +393,13 @@ export async function handleGameCommand(
     const weaknessCount = weaknessEffects
       .filter((e) => e.statusEffectId === StatusEffectId.WEAKNESS)
       .reduce((sum, e) => sum + e.count, 0);
-    const winChance = GAME_WIN_CHANCE / Math.pow(2, weaknessCount);
+    const buffCount = weaknessEffects
+      .filter((e) => e.statusEffectId === StatusEffectId.BUFF)
+      .reduce((sum, e) => sum + e.count, 0);
+    const winChance = (GAME_WIN_CHANCE / Math.pow(2, weaknessCount)) * Math.pow(2, buffCount);
+    if (buffCount > 0) {
+      await removeStatusEffect(chatId, userId, StatusEffectId.BUFF);
+    }
     if (roll < winChance) {
       outcome = 'Я победил';
       gameEnded = true;
