@@ -675,6 +675,42 @@ describe('Message Handler Integration', () => {
       expect(mockSkillUsers['chat1_user1']).toBeDefined();
     });
 
+    it('Chlenodin applies "Членосила" buff to himself during active game', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 3,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 312,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining(
+            'Шанс победы следующего члена Yegor Feoktistov увеличен в 2 раза!'
+          ),
+          reply_to_message_id: 312,
+        })
+      );
+      expect(mockSkillUsers['chat1_user1']).toBeDefined();
+      expect(mockStatusEffects['chat1_user1_Членосила']).toBeDefined();
+      expect(mockStatusEffects['chat1_user1_Членосила'].count).toBe(1);
+      expect(mockGameSessions['chat1'].isActive).toBe(1);
+      expect(mockGameSessions['chat1'].sessionEndedAt).toBeNull();
+    });
+
     it('already used during active game -> M4, no effect written', async () => {
       activeSession();
       mockUserStats['chat1_user1'] = {

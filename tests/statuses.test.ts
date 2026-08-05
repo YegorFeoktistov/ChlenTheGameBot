@@ -242,4 +242,72 @@ describe('Status Effects', () => {
       expect(mockStatusEffects).toEqual({});
     });
   });
+
+  describe('win chance with "Членосила" buff', () => {
+    it('gives 20% win chance with 1 "Членосила" buff (x2)', async () => {
+      // Turn 1 - Pasha starts (always no roll on first move)
+      const r1 = await handleGameCommand('chat1', 'user1', 'Pasha', 0.5);
+      expect(r1.status).toBe(CommandStatus.SUCCESS);
+      expect(r1.gameStarted).toBe(true);
+
+      setMockStatusEffects('chat1', 'user1', StatusEffectId.BUFF, 1);
+
+      // Turn 2 - User2 joins
+      const r2 = await handleGameCommand('chat1', 'user2', 'SecondPerson', 0.5);
+      expect(r2.status).toBe(CommandStatus.SUCCESS);
+      expect(r2.gameEnded).toBe(false);
+
+      // Turn 3 - User1 with buff (winChance = 0.2). roll = 0.11 would NOT win without buff
+      const r3 = await handleGameCommand('chat1', 'user1', 'Pasha', GAME_WIN_CHANCE + 0.01);
+      expect(r3.status).toBe(CommandStatus.SUCCESS);
+      expect(r3.gameEnded).toBe(true);
+      expect(r3.winnerName).toBe('Pasha');
+    });
+
+    it('consumes the buff after a single roll', async () => {
+      // Turn 1
+      const r1 = await handleGameCommand('chat1', 'user1', 'Pasha', 0.5);
+      expect(r1.gameStarted).toBe(true);
+
+      setMockStatusEffects('chat1', 'user1', StatusEffectId.BUFF, 1);
+
+      // Turn 2
+      const r2 = await handleGameCommand('chat1', 'user2', 'SecondPerson', 0.5);
+      expect(r2.gameEnded).toBe(false);
+
+      // Turn 3 - User1 rolls and does NOT win, buff should be consumed
+      const r3 = await handleGameCommand('chat1', 'user1', 'Pasha', 0.5);
+      expect(r3.status).toBe(CommandStatus.SUCCESS);
+      expect(r3.gameEnded).toBe(false);
+      expect(r3.outcome).toBe('Член');
+
+      expect(mockStatusEffects).toEqual({});
+    });
+
+    it('buff does not double the win chance on the roll after it was consumed', async () => {
+      // Turn 1
+      const r1 = await handleGameCommand('chat1', 'user1', 'Pasha', 0.5);
+      expect(r1.gameStarted).toBe(true);
+
+      setMockStatusEffects('chat1', 'user1', StatusEffectId.BUFF, 1);
+
+      // Turn 2
+      const r2 = await handleGameCommand('chat1', 'user2', 'SecondPerson', 0.5);
+      expect(r2.gameEnded).toBe(false);
+
+      // Turn 3 - User1 rolls and loses, buff consumed
+      const r3 = await handleGameCommand('chat1', 'user1', 'Pasha', 0.5);
+      expect(r3.gameEnded).toBe(false);
+
+      // Turn 4 - User2 rolls and loses
+      const r4 = await handleGameCommand('chat1', 'user2', 'SecondPerson', 0.5);
+      expect(r4.gameEnded).toBe(false);
+
+      // Turn 5 - User1 rolls again without buff, roll >= base winChance -> no win
+      const r5 = await handleGameCommand('chat1', 'user1', 'Pasha', GAME_WIN_CHANCE + 0.01);
+      expect(r5.status).toBe(CommandStatus.SUCCESS);
+      expect(r5.gameEnded).toBe(false);
+      expect(r5.outcome).toBe('Член');
+    });
+  });
 });

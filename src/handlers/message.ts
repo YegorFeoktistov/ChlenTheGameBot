@@ -20,6 +20,7 @@ import {
   recordSkillUsed,
   applyWeaknessToTarget,
 } from '../services/skills.service.js';
+import { addStatusEffect } from '../services/statusEffects.service.js';
 import { getQueueMode, setQueueMode } from '../services/queue.service.js';
 import {
   sendGameStartNotification,
@@ -41,6 +42,7 @@ import {
   GameCommand,
   DUEL_DECLINE_WORDS,
   SESSION_COOLDOWN_SECONDS,
+  StatusEffectId,
 } from '../utils/constants.js';
 import { withChatLock } from '../utils/mutex.js';
 import type { TelegramMessage } from '../types/sdk.d.js';
@@ -275,6 +277,17 @@ export default async function (message: TelegramMessage) {
         await api.sendMessage({
           chat_id: chatId,
           text: targetResult.message,
+          reply_to_message_id: message.message_id,
+        });
+        return;
+      }
+
+      if (skillClass === ChlenClass.CHLENODIN) {
+        await addStatusEffect(chatId, userId, StatusEffectId.BUFF);
+        await recordSkillUsed(chatId, userId);
+        await api.sendMessage({
+          chat_id: chatId,
+          text: `Шанс победы следующего члена ${userDisplayName} увеличен в 2 раза!`,
           reply_to_message_id: message.message_id,
         });
         return;
