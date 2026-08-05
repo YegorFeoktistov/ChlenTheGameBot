@@ -6,18 +6,27 @@ import type {
   WarnedUserRecord,
   QueuePlayerRecord,
   UserRecord,
+  UserStatRecord,
+  SkillUserRecord,
+  StatusEffectUserRecord,
 } from '../src/types/models.js';
 
 let mockGameSessions: Record<string, GameSessionRecord> = {};
 let mockWarnedUsers: Record<string, WarnedUserRecord> = {};
 let mockQueuePlayers: Record<string, QueuePlayerRecord> = {};
 let mockUsers: Record<string, UserRecord> = {};
+let mockUserStats: Record<string, UserStatRecord> = {};
+let mockSkillUsers: Record<string, SkillUserRecord> = {};
+let mockStatusEffects: Record<string, StatusEffectUserRecord> = {};
 
 describe('Message Handler Integration', () => {
   beforeEach(() => {
     mockGameSessions = {};
     mockWarnedUsers = {};
     mockQueuePlayers = {};
+    mockUserStats = {};
+    mockSkillUsers = {};
+    mockStatusEffects = {};
     mockUsers = {
       initiator: {
         id: 'user1',
@@ -59,6 +68,27 @@ describe('Message Handler Integration', () => {
                   const key = `${val.chatId}_${val.userId}`;
                   const updated = { ...(mockQueuePlayers[key] || {}), ...val, ...(opts.set || {}) };
                   mockQueuePlayers[key] = updated as QueuePlayerRecord;
+                }
+                if (tbl && tbl.name === 'chat_user_stats') {
+                  const updated = { ...val, ...(opts.set || {}) };
+                  mockUserStats[`${val.chatId}_${val.userId}`] =
+                    updated as unknown as UserStatRecord;
+                }
+                if (tbl && tbl.name === 'chat_skill_users') {
+                  mockSkillUsers[`${val.chatId}_${val.userId}`] = val as unknown as SkillUserRecord;
+                }
+                if (tbl && tbl.name === 'chat_status_effect_users') {
+                  const key = `${String(val.chatId)}_${String(val.userId)}_${String(val.statusEffectId)}`;
+                  if (mockStatusEffects[key]) {
+                    mockStatusEffects[key].count += 1;
+                  } else {
+                    mockStatusEffects[key] = {
+                      chatId: String(val.chatId),
+                      userId: String(val.userId),
+                      statusEffectId: String(val.statusEffectId),
+                      count: 1,
+                    };
+                  }
                 }
               },
             }),
@@ -108,9 +138,11 @@ describe('Message Handler Integration', () => {
             where: (cond?: unknown) => ({
               run: async () => {
                 if (tbl && tbl.name === 'users') {
-                  const condStr = cond ? JSON.stringify(cond) : '';
-                  if (condStr.includes('yegorfv')) return [mockUsers.initiator];
-                  if (condStr.includes('pasha')) return [mockUsers.opponent];
+                  if (cond && typeof cond === 'object') {
+                    const c = cond as { params?: unknown[]; b?: unknown };
+                    const username = String(c.params?.[0] ?? c.b ?? '');
+                    return Object.values(mockUsers).filter((u) => u.username === username);
+                  }
                   return Object.values(mockUsers);
                 }
                 if (tbl && tbl.name === 'chat_game_sessions')
@@ -119,6 +151,10 @@ describe('Message Handler Integration', () => {
                 if (tbl && tbl.name === 'chat_queue_players') {
                   return Object.values(mockQueuePlayers);
                 }
+                if (tbl && tbl.name === 'chat_user_stats') return Object.values(mockUserStats);
+                if (tbl && tbl.name === 'chat_skill_users') return Object.values(mockSkillUsers);
+                if (tbl && tbl.name === 'chat_status_effect_users')
+                  return Object.values(mockStatusEffects);
                 if (tbl && tbl.name === 'chats') {
                   return [{ id: 'chat1', title: 'Chat', createdAt: new Date() }];
                 }
@@ -130,6 +166,7 @@ describe('Message Handler Integration', () => {
                 return [{ id: 'chat1', title: 'Chat', createdAt: new Date() }];
               }
               if (tbl && tbl.name === 'chat_game_sessions') return Object.values(mockGameSessions);
+              if (tbl && tbl.name === 'users') return Object.values(mockUsers);
               return [];
             },
           }),
@@ -230,6 +267,445 @@ describe('Message Handler Integration', () => {
       // Should be ignored during active game (no out-of-turn warning, no turn count increase)
       expect(spy).not.toHaveBeenCalled();
       expect(mockGameSessions['chat1'].sessionMessagesCount).toBe(1);
+    });
+  });
+
+  describe('Skill Command /chlenskill', () => {
+    function activeSession() {
+      mockGameSessions['chat1'] = {
+        chatId: 'chat1',
+        isActive: 1,
+        lastUserId: null,
+        sessionMessagesCount: 1,
+        sessionEndedAt: null,
+        currentTurnStartedAt: 12345,
+        isDuel: 0,
+        duelInitiatorId: null,
+        duelOpponentId: null,
+        duelIsAccepted: 0,
+      };
+    }
+
+    it('Chlenoknizhnik applies weakness to valid @pasha during active game', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 1,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 300,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill @pasha',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('получил Членослабость'),
+          reply_to_message_id: 300,
+        })
+      );
+      expect(mockSkillUsers['chat1_user1']).toBeDefined();
+      expect(mockStatusEffects['chat1_user2_Членослабость']).toBeDefined();
+      expect(mockStatusEffects['chat1_user2_Членослабость'].count).toBe(1);
+      expect(mockGameSessions['chat1'].isActive).toBe(1);
+      expect(mockGameSessions['chat1'].sessionEndedAt).toBeNull();
+    });
+
+    it('rejects bare name pasha with no effect and no cooldown', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 1,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 301,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill pasha',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Неверная цель'),
+        })
+      );
+      expect(mockStatusEffects).toEqual({});
+      expect(mockSkillUsers['chat1_user1']).toBeUndefined();
+    });
+
+    it('rejects bare numeric ID 12345 with no effect and no cooldown', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 1,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 302,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill 12345',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Неверная цель'),
+        })
+      );
+      expect(mockStatusEffects).toEqual({});
+      expect(mockSkillUsers['chat1_user1']).toBeUndefined();
+    });
+
+    it('rejects unknown @ghost with no effect and no cooldown', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 1,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 303,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill @ghost',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Цель не найдена'),
+        })
+      );
+      expect(mockStatusEffects).toEqual({});
+      expect(mockSkillUsers['chat1_user1']).toBeUndefined();
+    });
+
+    it('rejects self-cast @yegorfv with no effect and no cooldown', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 1,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 304,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill @yegorfv',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Нельзя наложить Членослабость на себя!'),
+        })
+      );
+      expect(mockStatusEffects).toEqual({});
+      expect(mockSkillUsers['chat1_user1']).toBeUndefined();
+    });
+
+    it('sends M1 when there is no active game', async () => {
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 1,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 305,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill @pasha',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Нет активной игры'),
+        })
+      );
+      expect(mockStatusEffects).toEqual({});
+      expect(mockSkillUsers['chat1_user1']).toBeUndefined();
+    });
+
+    it('gate ordering: expired session wins over cooldown flag -> M1', async () => {
+      mockGameSessions['chat1'] = {
+        chatId: 'chat1',
+        isActive: 0,
+        lastUserId: null,
+        sessionMessagesCount: 1,
+        sessionEndedAt: 0,
+        currentTurnStartedAt: null,
+        isDuel: 0,
+        duelInitiatorId: null,
+        duelOpponentId: null,
+        duelIsAccepted: 0,
+      };
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 1,
+      };
+      mockSkillUsers['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 306,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill @pasha',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Нет активной игры'),
+        })
+      );
+      expect(spy).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining('уже использовал свою способность'),
+        })
+      );
+      expect(spy).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining('Игра только что закончилась'),
+        })
+      );
+      expect(mockStatusEffects).toEqual({});
+    });
+
+    it('sends M11 during the 10-second post-game cooldown window', async () => {
+      mockGameSessions['chat1'] = {
+        chatId: 'chat1',
+        isActive: 0,
+        lastUserId: null,
+        sessionMessagesCount: 1,
+        sessionEndedAt: Math.floor(Date.now() / 1000),
+        currentTurnStartedAt: null,
+        isDuel: 0,
+        duelInitiatorId: null,
+        duelOpponentId: null,
+        duelIsAccepted: 0,
+      };
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 1,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 307,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill @pasha',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Игра только что закончилась. Дай члену отдохнуть.'),
+        })
+      );
+      expect(mockStatusEffects).toEqual({});
+    });
+
+    it('pending duel blocks the skill -> M2, nothing applied, no cooldown', async () => {
+      mockGameSessions['chat1'] = {
+        chatId: 'chat1',
+        isActive: 1,
+        lastUserId: null,
+        sessionMessagesCount: 1,
+        sessionEndedAt: null,
+        currentTurnStartedAt: 12345,
+        isDuel: 1,
+        duelInitiatorId: 'user1',
+        duelOpponentId: 'user2',
+        duelIsAccepted: 0,
+      };
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 1,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 308,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill @pasha',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Нельзя использовать способность, пока дуэль не принята.'),
+        })
+      );
+      expect(mockStatusEffects).toEqual({});
+      expect(mockSkillUsers['chat1_user1']).toBeUndefined();
+      expect(mockGameSessions['chat1'].isActive).toBe(1);
+      expect(mockGameSessions['chat1'].duelIsAccepted).toBe(0);
+    });
+
+    it('generic class + inactive session -> M1, recordSkillUsed NOT called', async () => {
+      mockGameSessions['chat1'] = {
+        chatId: 'chat1',
+        isActive: 0,
+        lastUserId: null,
+        sessionMessagesCount: 1,
+        sessionEndedAt: 0,
+        currentTurnStartedAt: null,
+        isDuel: 0,
+        duelInitiatorId: null,
+        duelOpponentId: null,
+        duelIsAccepted: 0,
+      };
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 2,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 309,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Нет активной игры'),
+        })
+      );
+      expect(mockSkillUsers['chat1_user1']).toBeUndefined();
+    });
+
+    it('generic class + active session -> M10, skill recorded', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 2,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 310,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('использует способность: Членомант'),
+        })
+      );
+      expect(mockSkillUsers['chat1_user1']).toBeDefined();
+    });
+
+    it('already used during active game -> M4, no effect written', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 1,
+      };
+      mockSkillUsers['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 311,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill @pasha',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('уже использовал свою способность в этой игре!'),
+        })
+      );
+      expect(mockStatusEffects).toEqual({});
     });
   });
 });

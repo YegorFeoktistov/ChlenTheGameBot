@@ -269,9 +269,18 @@ function executeUpsert(tableName: string, valuesObj: Record<string, any>, confli
       ];
 
   const updateKeys = Object.keys(conflictOpts.set || {});
-  const updateAssignments = updateKeys.map((k) => `${decamelize(k)} = ?`);
-  const updateParams = updateKeys.map((k) => {
+  const updateAssignments = updateKeys.map((k) => {
     const v = conflictOpts.set[k];
+    if (v && typeof v === 'object' && v.sql !== undefined) {
+      return `${decamelize(k)} = ${v.sql}`;
+    }
+    return `${decamelize(k)} = ?`;
+  });
+  const updateParams = updateKeys.flatMap((k) => {
+    const v = conflictOpts.set[k];
+    if (v && typeof v === 'object' && v.sql !== undefined) {
+      return v.params ? v.params : [];
+    }
     if (v instanceof Date) return Math.floor(v.getTime() / 1000);
     return v ?? null;
   });
