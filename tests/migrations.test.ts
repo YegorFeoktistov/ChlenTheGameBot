@@ -31,6 +31,7 @@ describe('Database Migration Runner', () => {
     const columns = db.pragma('table_info(chats)') as { name: string }[];
     const columnNames = columns.map((c) => c.name);
     expect(columnNames).toContain('queue_mode');
+    expect(columnNames).toContain('start_on_mention');
   });
 
   it('creates chat_status_effect_users with correct columns', () => {

@@ -25,6 +25,7 @@ async function registerCommands() {
     { command: 'chlenunsub', description: 'Отписаться от уведомлений о старте' },
     { command: 'chlenskill', description: 'Использовать способность класса' },
     { command: 'chlenqueue', description: 'Настроить режим очередности' },
+    { command: 'chlenmention', description: 'Включить/выключить старт по упоминанию' },
     { command: 'start', description: 'Инструкция к игре' },
   ];
 

@@ -142,6 +142,17 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    name: '006_add_start_on_mention_to_chats',
+    up: (db) => {
+      // Safely add start_on_mention column to existing chats table if missing
+      const columns = db.pragma('table_info(chats)') as { name: string }[];
+      const hasStartOnMention = columns.some((c) => c.name === 'start_on_mention');
+      if (!hasStartOnMention) {
+        db.exec('ALTER TABLE chats ADD COLUMN start_on_mention INTEGER DEFAULT 1;');
+      }
+    },
+  },
 ];
 
 /**

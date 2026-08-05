@@ -4,8 +4,8 @@ Modern, high-performance Node.js & TypeScript Telegram Bot for group chats runni
 
 ## Game Rules
 
-1. **Starting the Game**: Sending `/chlen` (or writing the word `член` / `chlen` in plain text) starts a new game session and announces: `Член - игра началась!`.
-2. **Turns**: When a user submits `/chlen` or sends `член` / `chlen` (case-insensitive plain text), they roll for an outcome (a player cannot win on the 1st command starting a session):
+1. **Starting the Game**: Sending `/chlen` starts a new game session and announces: `Член - игра началась!`. Plain-text keyword start is controlled by `/chlenmention` (enabled by default): when enabled, any message containing `член` / `chlen` starts a game; when disabled, only a message consisting of exactly the keyword (case-insensitive, trimmed) does.
+2. **Turns**: When a user submits `/chlen` or, during an active session, sends exactly `член` / `chlen` (case-insensitive plain text), they roll for an outcome (a player cannot win on the 1st command starting a session):
    - **90% Probability**: The bot replies with `Член`.
    - **10% Probability**: The bot replies with `Я победил`.
 3. **Ending the Game**: When a user rolls `Я победил`, the session ends with: `Член - игра окончена! Победитель - {name}`.
@@ -15,22 +15,27 @@ Modern, high-performance Node.js & TypeScript Telegram Bot for group chats runni
      - **Order 69 Exclusion & Auto-End**: 3 skips in a session exclude the player (`Обнаружен натурал - {name}! Выполнить Приказ 69!`). If all session participants are excluded by Order 69, the session auto-terminates (`Все участники признаны натуралами! Вы расстроили Член. Игра окончена.`).
      - **Active Session Lock**: Changing mode during an active game is blocked with `Не мешай Члену работать!`.
    - `/chlenqueue 0` (_Нестрогий Член_): Standard anti-spam prevents consecutive turns by the same user (`Дождись очереди`).
-5. **Aborting Active Games (`/abortchlen`)**:
+5. **Mention-Start Toggle (`/chlenmention`)**:
+   - `/chlenmention` shows the current state, `/chlenmention 1` enables it, `/chlenmention 0` disables it.
+   - **Enabled** (default): any message containing the keyword `член` / `chlen` starts a new game session.
+   - **Disabled**: only a message consisting of exactly the keyword (trimmed, case-insensitive) starts a game; keyword mentions with other characters are ignored.
+   - During an active session, only an exact keyword acts as a turn in any mode; keyword mentions with other characters are ignored.
+6. **Aborting Active Games (`/abortchlen`)**:
    - `/abortchlen`: Aborts the active game session immediately (`Вы оборвали Член. Игра окончена.`). If no game is active, replies `Нет активного Члена.`.
-6. **Duel Mode (Дуэль)**:
-   - `/chlenduel @username` (or writing any play command with opponent username: `член @username` / `chlen @username`): Invites the specified user to a private 2-player duel.
+7. **Duel Mode (Дуэль)**:
+   - `/chlenduel @username` (or, when mention-start is enabled, a message containing the keyword with the opponent username at the end: `член @username` / `chlen @username`): Invites the specified user to a private 2-player duel.
    - **Acceptance/Refusal**: The opponent can accept the challenge by making a play move (`член` / `chlen` / `/chlen`), which immediately starts the game and announces `Член - игра началась!`. Alternatively, the opponent can refuse by replying with `нет`, `no`, or `net`, which terminates the challenge.
    - **Duel Rules**: Duels always bypass strict queue/turn timeout rules and run strictly on non-strict (alternating turn) order between the two players. The first move of both the opponent (on acceptance) and the initiator does not allow winning, but subsequent turns can win. Moves from third-party players are blocked and ignored (warned once per user).
-7. **Classes & Skills System**:
+8. **Classes & Skills System**:
    - `/chlenclasses`: View available game classes (_Членокнижник_ (наводит Членослабость), _Членомант_, _Членодин_, _Охотник на Члены_, _Мастер тысячи Членов_).
    - `/becomechlen <1-5>`: Choose your game class.
    - `/whichchlen`: View your assigned class.
    - `/chlenskill`: Activate your class ability once per game session.
-8. **Leaderboard & Stats**:
+9. **Leaderboard & Stats**:
    - `/chlenboard`: Scoreboard of wins in the group chat, sorted highest to lowest.
    - `/longestchlen`: Displays the longest completed game session record (turns, winner, date).
-9. **Session Cooldown**: 10-second cooldown between games (`Дай члену отдохнуть`).
-10. **Subscriptions**: `/chlensub` to subscribe to start notifications, `/chlenunsub` to unsubscribe.
+10. **Session Cooldown**: 10-second cooldown between games (`Дай члену отдохнуть`).
+11. **Subscriptions**: `/chlensub` to subscribe to start notifications, `/chlenunsub` to unsubscribe.
 
 ---
 

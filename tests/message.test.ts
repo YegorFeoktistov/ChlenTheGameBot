@@ -18,6 +18,7 @@ let mockUsers: Record<string, UserRecord> = {};
 let mockUserStats: Record<string, UserStatRecord> = {};
 let mockSkillUsers: Record<string, SkillUserRecord> = {};
 let mockStatusEffects: Record<string, StatusEffectUserRecord> = {};
+let mockChats: Record<string, { id: string; title: string; startOnMention?: number }> = {};
 
 describe('Message Handler Integration', () => {
   beforeEach(() => {
@@ -27,6 +28,7 @@ describe('Message Handler Integration', () => {
     mockUserStats = {};
     mockSkillUsers = {};
     mockStatusEffects = {};
+    mockChats = {};
     mockUsers = {
       initiator: {
         id: 'user1',
@@ -89,6 +91,13 @@ describe('Message Handler Integration', () => {
                       count: 1,
                     };
                   }
+                }
+                if (tbl && tbl.name === 'chats') {
+                  mockChats[String(val.id)] = {
+                    ...(mockChats[String(val.id)] || {}),
+                    ...val,
+                    ...(opts.set || {}),
+                  } as unknown as { id: string; title: string; startOnMention?: number };
                 }
               },
             }),
@@ -156,6 +165,8 @@ describe('Message Handler Integration', () => {
                 if (tbl && tbl.name === 'chat_status_effect_users')
                   return Object.values(mockStatusEffects);
                 if (tbl && tbl.name === 'chats') {
+                  const chat = mockChats['chat1'];
+                  if (chat) return [chat];
                   return [{ id: 'chat1', title: 'Chat', createdAt: new Date() }];
                 }
                 return [];
@@ -267,6 +278,301 @@ describe('Message Handler Integration', () => {
       // Should be ignored during active game (no out-of-turn warning, no turn count increase)
       expect(spy).not.toHaveBeenCalled();
       expect(mockGameSessions['chat1'].sessionMessagesCount).toBe(1);
+    });
+
+    it('processes an exact keyword as a turn during an active game in any mode', async () => {
+      // Set active session with mention-start disabled
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 0 };
+      mockGameSessions['chat1'] = {
+        chatId: 'chat1',
+        isActive: 1,
+        lastUserId: null,
+        sessionMessagesCount: 1,
+        sessionEndedAt: null,
+        currentTurnStartedAt: 12345,
+        isDuel: 0,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 215,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: 'член',
+      });
+
+      // Turn should be processed (messages count increased), no warning sent
+      expect(spy).not.toHaveBeenCalled();
+      expect(mockGameSessions['chat1'].sessionMessagesCount).toBe(2);
+    });
+
+    it('does NOT process first-word keyword during an active game, only exact match', async () => {
+      // Set active session (mention-start enabled by default)
+      mockGameSessions['chat1'] = {
+        chatId: 'chat1',
+        isActive: 1,
+        lastUserId: null,
+        sessionMessagesCount: 1,
+        sessionEndedAt: null,
+        currentTurnStartedAt: 12345,
+        isDuel: 0,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 216,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: 'член привет',
+      });
+
+      // Ignored during active game, even though the first word is the keyword
+      expect(spy).not.toHaveBeenCalled();
+      expect(mockGameSessions['chat1'].sessionMessagesCount).toBe(1);
+    });
+
+    it('does NOT start a game when keyword mention is disabled via /chlenmention 0', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 0 };
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 206,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: 'эй чуваки тут какой-то член пришел',
+      });
+
+      expect(mockGameSessions['chat1']).toBeUndefined();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('still starts a game via explicit /chlen command when keyword mention is disabled', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 0 };
+
+      await messageHandler({
+        message_id: 207,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlen',
+      });
+
+      expect(mockGameSessions['chat1']).toBeDefined();
+      expect(mockGameSessions['chat1'].isActive).toBe(1);
+    });
+
+    it('does NOT initiate a duel from keyword mention when disabled', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 0 };
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 208,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: 'эй чуваки сыграем в член @pasha',
+      });
+
+      expect(mockGameSessions['chat1']).toBeUndefined();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('starts a game from keyword mention when explicitly enabled', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 1 };
+
+      await messageHandler({
+        message_id: 209,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: 'эй чуваки тут какой-то член пришел',
+      });
+
+      expect(mockGameSessions['chat1']).toBeDefined();
+      expect(mockGameSessions['chat1'].isActive).toBe(1);
+    });
+
+    it('starts a game with exact keyword when mention-start is disabled', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 0 };
+
+      await messageHandler({
+        message_id: 210,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: 'член',
+      });
+
+      expect(mockGameSessions['chat1']).toBeDefined();
+      expect(mockGameSessions['chat1'].isActive).toBe(1);
+    });
+
+    it('starts a game with exact keyword case-insensitively when mention-start is disabled', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 0 };
+
+      await messageHandler({
+        message_id: 211,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: 'Chlen',
+      });
+
+      expect(mockGameSessions['chat1']).toBeDefined();
+      expect(mockGameSessions['chat1'].isActive).toBe(1);
+    });
+
+    it('starts a game with exact keyword ignoring surrounding whitespace when mention-start is disabled', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 0 };
+
+      await messageHandler({
+        message_id: 212,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '  член  ',
+      });
+
+      expect(mockGameSessions['chat1']).toBeDefined();
+      expect(mockGameSessions['chat1'].isActive).toBe(1);
+    });
+
+    it('does NOT start a game when mention-start is disabled and keyword has other characters', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 0 };
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 213,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: 'член привет',
+      });
+
+      expect(mockGameSessions['chat1']).toBeUndefined();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('does NOT initiate a duel when mention-start is disabled and keyword has a tag', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 0 };
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 214,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: 'член @pasha',
+      });
+
+      expect(mockGameSessions['chat1']).toBeUndefined();
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Mention Start Toggle Command /chlenmention', () => {
+    it('shows current state as enabled by default', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 400,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenmention',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: 'Старт по упоминанию включен',
+        })
+      );
+    });
+
+    it('shows current state as disabled when startOnMention is 0', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 0 };
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 401,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenmention',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: 'Старт по упоминанию выключен',
+        })
+      );
+    });
+
+    it('enables mention start with /chlenmention 1', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 402,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenmention 1',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: 'Включен старт по упоминанию',
+        })
+      );
+      expect(mockChats['chat1'].startOnMention).toBe(1);
+    });
+
+    it('disables mention start with /chlenmention 0', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 403,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenmention 0',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: 'Выключен старт по упоминанию',
+        })
+      );
+      expect(mockChats['chat1'].startOnMention).toBe(0);
+    });
+
+    it('rejects invalid param', async () => {
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 404,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenmention 2',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Укажите режим'),
+        })
+      );
+      expect(mockChats['chat1'].startOnMention).toBeUndefined();
     });
   });
 
