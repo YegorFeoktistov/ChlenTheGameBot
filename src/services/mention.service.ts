@@ -9,7 +9,7 @@ export async function getStartOnMention(chatId: string): Promise<number> {
   if (rows && rows.length > 0 && rows[0].startOnMention !== undefined) {
     return rows[0].startOnMention;
   }
-  return 1; // Default = 1 (start game from keyword mention enabled)
+  return 0; // Default = 0 (start game from keyword mention disabled)
 }
 
 export async function setStartOnMention(chatId: string, enabled: number): Promise<void> {

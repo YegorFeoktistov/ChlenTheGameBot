@@ -149,7 +149,7 @@ export const migrations: Migration[] = [
       const columns = db.pragma('table_info(chats)') as { name: string }[];
       const hasStartOnMention = columns.some((c) => c.name === 'start_on_mention');
       if (!hasStartOnMention) {
-        db.exec('ALTER TABLE chats ADD COLUMN start_on_mention INTEGER DEFAULT 1;');
+        db.exec('ALTER TABLE chats ADD COLUMN start_on_mention INTEGER DEFAULT 0;');
       }
     },
   },

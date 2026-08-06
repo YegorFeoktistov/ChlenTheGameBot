@@ -2,7 +2,7 @@ export interface ChatRecord {
   id: string;
   title: string;
   queueMode?: number; // 1 = Strict, 0 = Non-strict
-  startOnMention?: number; // 1 = Start game from keyword mention (default), 0 = disabled
+  startOnMention?: number; // 0 = disabled (default), 1 = Start game from keyword mention
   createdAt?: Date | number;
 }
 

@@ -411,15 +411,15 @@ export default async function (message: TelegramMessage) {
       startOnMention === 1 ? lowerText.includes(chlen) : lowerText === chlen
     );
 
-  // During an active session only the exact keyword acts as a command
-  // (turn / duel acceptance), regardless of the mention-start mode.
+  // The exact plain-text keyword is always a play command: it starts a game
+  // when idle and acts as a turn / duel acceptance during an active session,
+  // regardless of the mention-start mode.
   const isExactKeyword = !rawText.startsWith('/') && keywords.some((chlen) => lowerText === chlen);
-  const isActiveTurnCommand = isExactKeyword && session !== null && session.isActive === 1;
 
+  // Commands that can start a game: slash commands or the exact keyword.
+  // Pure command enumeration — not bound to session state.
   const isChlenOrDuelCommand =
-    firstPart === GameCommand.GAME_CHLEN_SLASH ||
-    firstPart === GameCommand.DUEL ||
-    isActiveTurnCommand;
+    firstPart === GameCommand.GAME_CHLEN_SLASH || firstPart === GameCommand.DUEL || isExactKeyword;
 
   const isDuelInitiationCmd = firstPart === GameCommand.DUEL;
   const hasOpponentTagAtEnd = parts.length > 1 && lastPart.startsWith('@');

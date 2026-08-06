@@ -6,7 +6,7 @@ export const chats = table('chats', {
   id: text('id').primaryKey(), // Telegram chat ID as string
   title: text('title'),
   queueMode: integer('queue_mode').default(1), // 1 = Strict (default), 0 = Non-strict
-  startOnMention: integer('start_on_mention').default(1), // 1 = Start game from keyword mention (default), 0 = disabled
+  startOnMention: integer('start_on_mention').default(0), // 0 = disabled (default), 1 = Start game from keyword mention
   createdAt: integer('created_at', { mode: 'timestamp' }),
 });
 

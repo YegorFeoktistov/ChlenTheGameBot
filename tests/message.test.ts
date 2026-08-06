@@ -187,6 +187,7 @@ describe('Message Handler Integration', () => {
 
   describe('Keyword Mention & Command Isolation', () => {
     it('starts a new game when keyword "член" or "chlen" is mentioned in plain text and session is inactive', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 1 };
       const spy = vi.spyOn(api, 'sendMessage');
 
       await messageHandler({
@@ -223,6 +224,7 @@ describe('Message Handler Integration', () => {
     });
 
     it('initiates a duel when message mentions "член" or "chlen" and user tag is at the end', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 1 };
       await messageHandler({
         message_id: 203,
         date: 12345,
@@ -239,6 +241,7 @@ describe('Message Handler Integration', () => {
     });
 
     it('does NOT initiate a duel when tag is NOT at the end of the message, starts regular game instead', async () => {
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 1 };
       await messageHandler({
         message_id: 204,
         date: 12345,
@@ -253,7 +256,8 @@ describe('Message Handler Integration', () => {
     });
 
     it('does NOT process turn or trigger out-of-turn warning when plain text mentions "член" during an active game', async () => {
-      // Set active session
+      // Set active session with mention-start enabled
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 1 };
       mockGameSessions['chat1'] = {
         chatId: 'chat1',
         isActive: 1,
@@ -309,7 +313,8 @@ describe('Message Handler Integration', () => {
     });
 
     it('does NOT process first-word keyword during an active game, only exact match', async () => {
-      // Set active session (mention-start enabled by default)
+      // Set active session with mention-start enabled
+      mockChats['chat1'] = { id: 'chat1', title: 'Chat', startOnMention: 1 };
       mockGameSessions['chat1'] = {
         chatId: 'chat1',
         isActive: 1,
@@ -476,7 +481,7 @@ describe('Message Handler Integration', () => {
   });
 
   describe('Mention Start Toggle Command /chlenmention', () => {
-    it('shows current state as enabled by default', async () => {
+    it('shows current state as disabled by default', async () => {
       const spy = vi.spyOn(api, 'sendMessage');
 
       await messageHandler({
@@ -490,7 +495,7 @@ describe('Message Handler Integration', () => {
       expect(spy).toHaveBeenCalledWith(
         expect.objectContaining({
           chat_id: 'chat1',
-          text: 'Старт по упоминанию включен',
+          text: 'Старт по упоминанию выключен',
         })
       );
     });

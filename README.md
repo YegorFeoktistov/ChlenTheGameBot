@@ -4,7 +4,7 @@ Modern, high-performance Node.js & TypeScript Telegram Bot for group chats runni
 
 ## Game Rules
 
-1. **Starting the Game**: Sending `/chlen` starts a new game session and announces: `Член - игра началась!`. Plain-text keyword start is controlled by `/chlenmention` (enabled by default): when enabled, any message containing `член` / `chlen` starts a game; when disabled, only a message consisting of exactly the keyword (case-insensitive, trimmed) does.
+1. **Starting the Game**: Sending `/chlen` starts a new game session and announces: `Член - игра началась!`. Plain-text keyword start is controlled by `/chlenmention` (disabled by default): when enabled, any message containing `член` / `chlen` starts a game; when disabled, only a message consisting of exactly the keyword (case-insensitive, trimmed) does.
 2. **Turns**: When a user submits `/chlen` or, during an active session, sends exactly `член` / `chlen` (case-insensitive plain text), they roll for an outcome (a player cannot win on the 1st command starting a session):
    - **90% Probability**: The bot replies with `Член`.
    - **10% Probability**: The bot replies with `Я победил`.
@@ -17,8 +17,8 @@ Modern, high-performance Node.js & TypeScript Telegram Bot for group chats runni
    - `/chlenqueue 0` (_Нестрогий Член_): Standard anti-spam prevents consecutive turns by the same user (`Дождись очереди`).
 5. **Mention-Start Toggle (`/chlenmention`)**:
    - `/chlenmention` shows the current state, `/chlenmention 1` enables it, `/chlenmention 0` disables it.
-   - **Enabled** (default): any message containing the keyword `член` / `chlen` starts a new game session.
-   - **Disabled**: only a message consisting of exactly the keyword (trimmed, case-insensitive) starts a game; keyword mentions with other characters are ignored.
+   - **Enabled**: any message containing the keyword `член` / `chlen` starts a new game session.
+   - **Disabled** (default): only a message consisting of exactly the keyword (trimmed, case-insensitive) starts a game; keyword mentions with other characters are ignored.
    - During an active session, only an exact keyword acts as a turn in any mode; keyword mentions with other characters are ignored.
 6. **Aborting Active Games (`/abortchlen`)**:
    - `/abortchlen`: Aborts the active game session immediately (`Вы оборвали Член. Игра окончена.`). If no game is active, replies `Нет активного Члена.`.
