@@ -63,6 +63,7 @@ export enum GameCommand {
   UNSUBSCRIBE = '/chlenunsub',
   SKILL = '/chlenskill',
   QUEUE = '/chlenqueue',
+  MENTION = '/chlenmention',
   ABORT = '/abortchlen',
   DUEL = '/chlenduel',
   GAME_CHLEN_SLASH = '/chlen',

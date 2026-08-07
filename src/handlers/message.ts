@@ -22,6 +22,7 @@ import {
 } from '../services/skills.service.js';
 import { addStatusEffect } from '../services/statusEffects.service.js';
 import { getQueueMode, setQueueMode } from '../services/queue.service.js';
+import { getStartOnMention, setStartOnMention } from '../services/mention.service.js';
 import {
   sendGameStartNotification,
   sendSkipNotifications,
@@ -106,6 +107,7 @@ export default async function (message: TelegramMessage) {
         `${GameCommand.WHICH_CLASS} - посмотреть свой класс\n` +
         `${GameCommand.SKILL} - использовать способность класса\n` +
         `${GameCommand.QUEUE} - переключить режим очередности (строгий/нестрогий)\n` +
+        `${GameCommand.MENTION} - включить/выключить старт игры по упоминанию ключевого слова\n` +
         `${GameCommand.SUBSCRIBE} - подписаться на уведомления о старте\n` +
         `${GameCommand.UNSUBSCRIBE} - отписаться от уведомлений о старте\n` +
         `${GameCommand.DUEL} @username - бросить вызов на дуэль (игра для 2 игроков по нестрогой очереди)`,
@@ -351,7 +353,36 @@ export default async function (message: TelegramMessage) {
     return;
   }
 
-  // 11. Command /abortchlen
+  // 11. Command /chlenmention
+  if (lowerText.startsWith(GameCommand.MENTION)) {
+    await withChatLock(chatId, async () => {
+      const parts = rawText.split(/\s+/);
+      const hasParam = parts.length > 1;
+
+      if (hasParam) {
+        const enabledParam = parseInt(parts[1], 10);
+        if (enabledParam === 1) {
+          await setStartOnMention(chatId, 1);
+          await api.sendMessage({ chat_id: chatId, text: 'Включен старт по упоминанию' });
+        } else if (enabledParam === 0) {
+          await setStartOnMention(chatId, 0);
+          await api.sendMessage({ chat_id: chatId, text: 'Выключен старт по упоминанию' });
+        } else {
+          await api.sendMessage({
+            chat_id: chatId,
+            text: `Укажите режим: ${GameCommand.MENTION} 1 (включить) или ${GameCommand.MENTION} 0 (выключить)`,
+          });
+        }
+      } else {
+        const currentEnabled = await getStartOnMention(chatId);
+        const stateText = currentEnabled === 1 ? 'включен' : 'выключен';
+        await api.sendMessage({ chat_id: chatId, text: `Старт по упоминанию ${stateText}` });
+      }
+    });
+    return;
+  }
+
+  // 12. Command /abortchlen
   if (lowerText.startsWith(GameCommand.ABORT)) {
     await withChatLock(chatId, async () => {
       const { wasActive } = await abortGameSession(chatId);
@@ -364,29 +395,38 @@ export default async function (message: TelegramMessage) {
     return;
   }
 
-  // 12. Command /chlen OR plain text "член" / "chlen" / /chlenduel
+  // 13. Command /chlen OR plain text "член" / "chlen" / /chlenduel
   const parts = rawText.split(/\s+/);
   const firstPart = parts[0].toLowerCase().split('@')[0];
   const lastPart = parts[parts.length - 1];
 
-  const isChlenOrDuelCommand =
-    firstPart === GameCommand.GAME_CHLEN_SLASH ||
-    firstPart === GameCommand.GAME_CHLEN_RU ||
-    firstPart === GameCommand.GAME_CHLEN_EN ||
-    firstPart === GameCommand.DUEL;
+  const startOnMention = await getStartOnMention(chatId);
+  const keywords = [GameCommand.GAME_CHLEN_RU, GameCommand.GAME_CHLEN_EN];
 
-  const isChlenInside =
+  // Plain-text keyword mention: exact match (trimmed, case-insensitive) when
+  // mention-start is disabled, any occurrence of the keyword when enabled.
+  const isKeywordMention =
     !rawText.startsWith('/') &&
-    [GameCommand.GAME_CHLEN_RU, GameCommand.GAME_CHLEN_EN].some((chlen) =>
-      lowerText.includes(chlen)
+    keywords.some((chlen) =>
+      startOnMention === 1 ? lowerText.includes(chlen) : lowerText === chlen
     );
+
+  // The exact plain-text keyword is always a play command: it starts a game
+  // when idle and acts as a turn / duel acceptance during an active session,
+  // regardless of the mention-start mode.
+  const isExactKeyword = !rawText.startsWith('/') && keywords.some((chlen) => lowerText === chlen);
+
+  // Commands that can start a game: slash commands or the exact keyword.
+  // Pure command enumeration — not bound to session state.
+  const isChlenOrDuelCommand =
+    firstPart === GameCommand.GAME_CHLEN_SLASH || firstPart === GameCommand.DUEL || isExactKeyword;
 
   const isDuelInitiationCmd = firstPart === GameCommand.DUEL;
   const hasOpponentTagAtEnd = parts.length > 1 && lastPart.startsWith('@');
-  const hasChlenKeyword = isChlenOrDuelCommand || isChlenInside;
+  const hasChlenKeyword = isChlenOrDuelCommand || isKeywordMention;
 
   const isDuelAttempt = isDuelInitiationCmd || (hasChlenKeyword && hasOpponentTagAtEnd);
-  const canStartGameFromMention = isChlenInside && !(session && session.isActive === 1);
+  const canStartGameFromMention = isKeywordMention && !(session && session.isActive === 1);
 
   if (isChlenOrDuelCommand || isDuelAttempt || canStartGameFromMention) {
     if (isDuelAttempt) {
