@@ -138,6 +138,26 @@ var migrations = [
         db.exec("ALTER TABLE chat_game_sessions ADD COLUMN duel_is_accepted INTEGER DEFAULT 0;");
       }
     }
+  },
+  {
+    name: "006_add_start_on_mention_to_chats",
+    up: (db) => {
+      const columns = db.pragma("table_info(chats)");
+      const hasStartOnMention = columns.some((c) => c.name === "start_on_mention");
+      if (!hasStartOnMention) {
+        db.exec("ALTER TABLE chats ADD COLUMN start_on_mention INTEGER DEFAULT 0;");
+      }
+    }
+  },
+  {
+    name: "007_add_chlenomant_charges",
+    up: (db) => {
+      const columns = db.pragma("table_info(chat_user_stats)");
+      const hasCharges = columns.some((c) => c.name === "chlenomant_charges");
+      if (!hasCharges) {
+        db.exec("ALTER TABLE chat_user_stats ADD COLUMN chlenomant_charges INTEGER DEFAULT 0;");
+      }
+    }
   }
 ];
 function runMigrations(db) {
@@ -221,6 +241,8 @@ var chats = table("chats", {
   title: text("title"),
   queueMode: integer("queue_mode").default(1),
   // 1 = Strict (default), 0 = Non-strict
+  startOnMention: integer("start_on_mention").default(0),
+  // 0 = disabled (default), 1 = Start game from keyword mention
   createdAt: integer("created_at", { mode: "timestamp" })
 });
 var users = table("users", {
@@ -238,8 +260,10 @@ var chatUserStats = table(
     userId: text("user_id"),
     wins: integer("wins").default(0),
     displayName: text("display_name"),
-    classIndex: integer("class_index")
+    classIndex: integer("class_index"),
     // 1-5 (nullable)
+    chlenomantCharges: integer("chlenomant_charges").default(0)
+    // Accumulated losses for Chlenomant skill
   },
   (t) => ({
     pk: primaryKey(t.chatId, t.userId)

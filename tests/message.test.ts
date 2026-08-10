@@ -73,8 +73,10 @@ describe('Message Handler Integration', () => {
                 }
                 if (tbl && tbl.name === 'chat_user_stats') {
                   const updated = { ...val, ...(opts.set || {}) };
-                  mockUserStats[`${val.chatId}_${val.userId}`] =
-                    updated as unknown as UserStatRecord;
+                  mockUserStats[`${val.chatId}_${val.userId}`] = {
+                    ...(mockUserStats[`${val.chatId}_${val.userId}`] || {}),
+                    ...updated,
+                  } as unknown as UserStatRecord;
                 }
                 if (tbl && tbl.name === 'chat_skill_users') {
                   mockSkillUsers[`${val.chatId}_${val.userId}`] = val as unknown as SkillUserRecord;
@@ -116,6 +118,12 @@ describe('Message Handler Integration', () => {
               if (!tbl || tbl.name === 'chat_queue_players') {
                 mockQueuePlayers = {};
               }
+              if (tbl && tbl.name === 'chat_skill_users') {
+                mockSkillUsers = {};
+              }
+              if (tbl && tbl.name === 'chat_status_effect_users') {
+                mockStatusEffects = {};
+              }
             },
           }),
         }) as unknown as ReturnType<typeof db.delete>
@@ -125,7 +133,7 @@ describe('Message Handler Integration', () => {
       (tbl: { name?: string }) =>
         ({
           set: (setVal: Record<string, unknown>) => ({
-            where: () => ({
+            where: (cond: { conditions?: { b?: string }[]; b?: string }) => ({
               run: async () => {
                 if (tbl && tbl.name === 'chat_game_sessions') {
                   const chatId = 'chat1';
@@ -133,6 +141,17 @@ describe('Message Handler Integration', () => {
                     ...(mockGameSessions[chatId] || {}),
                     ...setVal,
                   } as GameSessionRecord;
+                }
+                if (tbl && tbl.name === 'chat_user_stats') {
+                  const conds = cond && cond.conditions ? cond.conditions : cond ? [cond] : [];
+                  const chatId = conds[0]?.b;
+                  const userId = conds[1]?.b;
+                  for (const key of Object.keys(mockUserStats)) {
+                    const row = mockUserStats[key];
+                    if (row.chatId === chatId && (userId === undefined || row.userId === userId)) {
+                      mockUserStats[key] = { ...row, ...setVal } as UserStatRecord;
+                    }
+                  }
                 }
               },
             }),
@@ -149,8 +168,12 @@ describe('Message Handler Integration', () => {
                 if (tbl && tbl.name === 'users') {
                   if (cond && typeof cond === 'object') {
                     const c = cond as { params?: unknown[]; b?: unknown };
-                    const username = String(c.params?.[0] ?? c.b ?? '');
-                    return Object.values(mockUsers).filter((u) => u.username === username);
+                    const param = String(c.params?.[0] ?? c.b ?? '');
+                    const byUsername = Object.values(mockUsers).filter((u) => u.username === param);
+                    if (byUsername.length > 0) return byUsername;
+                    const byId = Object.values(mockUsers).filter((u) => u.id === param);
+                    if (byId.length > 0) return byId;
+                    return [];
                   }
                   return Object.values(mockUsers);
                 }
@@ -162,8 +185,24 @@ describe('Message Handler Integration', () => {
                 }
                 if (tbl && tbl.name === 'chat_user_stats') return Object.values(mockUserStats);
                 if (tbl && tbl.name === 'chat_skill_users') return Object.values(mockSkillUsers);
-                if (tbl && tbl.name === 'chat_status_effect_users')
-                  return Object.values(mockStatusEffects);
+                if (tbl && tbl.name === 'chat_status_effect_users') {
+                  const all = Object.values(mockStatusEffects);
+                  if (cond && typeof cond === 'object') {
+                    const conds = (cond as { conditions?: { b?: string }[] }).conditions || [
+                      cond as { b?: string },
+                    ];
+                    const chatId = conds[0]?.b;
+                    const userId = conds[1]?.b;
+                    const effectId = conds[2]?.b;
+                    return all.filter(
+                      (e) =>
+                        (chatId === undefined || e.chatId === chatId) &&
+                        (userId === undefined || e.userId === userId) &&
+                        (effectId === undefined || e.statusEffectId === effectId)
+                    );
+                  }
+                  return all;
+                }
                 if (tbl && tbl.name === 'chats') {
                   const chat = mockChats['chat1'];
                   if (chat) return [chat];
@@ -957,7 +996,7 @@ describe('Message Handler Integration', () => {
       expect(mockSkillUsers['chat1_user1']).toBeUndefined();
     });
 
-    it('generic class + active session -> M10, skill recorded', async () => {
+    it('chlenomant with no charges -> M13 "Нет членов для поднятия", no cooldown', async () => {
       activeSession();
       mockUserStats['chat1_user1'] = {
         chatId: 'chat1',
@@ -965,6 +1004,7 @@ describe('Message Handler Integration', () => {
         wins: 0,
         displayName: 'Yegor Feoktistov',
         classIndex: 2,
+        chlenomantCharges: 0,
       };
 
       const spy = vi.spyOn(api, 'sendMessage');
@@ -980,10 +1020,11 @@ describe('Message Handler Integration', () => {
       expect(spy).toHaveBeenCalledWith(
         expect.objectContaining({
           chat_id: 'chat1',
-          text: expect.stringContaining('использует способность: Членомант'),
+          text: 'Нет членов для поднятия',
+          reply_to_message_id: 310,
         })
       );
-      expect(mockSkillUsers['chat1_user1']).toBeDefined();
+      expect(mockSkillUsers['chat1_user1']).toBeUndefined();
     });
 
     it('Chlenodin applies "Членосила" buff to himself during active game', async () => {
@@ -1053,6 +1094,196 @@ describe('Message Handler Integration', () => {
         })
       );
       expect(mockStatusEffects).toEqual({});
+    });
+
+    it('chlenomant lifts charges: rolls once per charge, silent on losses', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 2,
+        chlenomantCharges: 3,
+      };
+      vi.spyOn(Math, 'random').mockReturnValue(0.99); // all rolls lose
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 320,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: '@yegorfv поднимает 3 члена',
+          reply_to_message_id: 320,
+        })
+      );
+      expect(spy).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'Я победил',
+        })
+      );
+      expect(mockSkillUsers['chat1_user1']).toBeDefined();
+      expect(mockUserStats['chat1_user1']?.chlenomantCharges).toBe(0);
+      expect(mockGameSessions['chat1'].isActive).toBe(1);
+    });
+
+    it('chlenomant wins on a lifted roll -> usual win flow', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 2,
+        chlenomantCharges: 2,
+      };
+      vi.spyOn(Math, 'random').mockReturnValue(0.01); // first lifted roll wins
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 321,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: '@yegorfv поднимает 2 члена',
+        })
+      );
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: 'Я победил',
+        })
+      );
+      expect(mockGameSessions['chat1'].isActive).toBe(0);
+    });
+
+    it('hunter captures members: activation text, rolls once per player, then blocked', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 4,
+      };
+      mockQueuePlayers['chat1_user2'] = {
+        chatId: 'chat1',
+        userId: 'user2',
+        turnOrder: 1,
+        skipCount: 0,
+        isExcluded: 0,
+        lastTurnAt: 12345,
+      };
+      vi.spyOn(Math, 'random').mockReturnValue(0.99); // captured rolls lose
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 322,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: 'Ваши члены в руках @yegorfv',
+          reply_to_message_id: 322,
+        })
+      );
+      expect(spy).not.toHaveBeenCalledWith(expect.objectContaining({ text: 'Я победил' }));
+      expect(mockSkillUsers['chat1_user1']).toBeDefined();
+      expect(mockStatusEffects['chat1_user1_Хватка охотника']).toBeDefined();
+    });
+
+    it('blocked hunter cannot roll until the end of the game', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 4,
+      };
+      mockStatusEffects['chat1_user1_Хватка охотника'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        statusEffectId: 'Хватка охотника',
+        count: 1,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 323,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlen',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: 'Охотник на Члены не может ходить до конца игры!',
+          reply_to_message_id: 323,
+        })
+      );
+      expect(mockGameSessions['chat1'].isActive).toBe(1);
+    });
+
+    it('master of thousand members: activation text with effect explanation', async () => {
+      activeSession();
+      mockUserStats['chat1_user1'] = {
+        chatId: 'chat1',
+        userId: 'user1',
+        wins: 0,
+        displayName: 'Yegor Feoktistov',
+        classIndex: 5,
+      };
+
+      const spy = vi.spyOn(api, 'sendMessage');
+
+      await messageHandler({
+        message_id: 324,
+        date: 12345,
+        chat: { id: 'chat1', title: 'Test Chat' },
+        from: { id: 'user1', first_name: 'Yegor', last_name: 'Feoktistov', username: 'yegorfv' },
+        text: '/chlenskill',
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 'chat1',
+          text: expect.stringContaining('Член @yegorfv упал'),
+          reply_to_message_id: 324,
+        })
+      );
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining('каждый последующий член будет получать +5%'),
+        })
+      );
+      expect(mockSkillUsers['chat1_user1']).toBeDefined();
+      expect(mockStatusEffects['chat1_user1_Членовосхождение']).toBeDefined();
+      expect(mockStatusEffects['chat1_user1_Членовосхождение'].count).toBe(1);
     });
   });
 });

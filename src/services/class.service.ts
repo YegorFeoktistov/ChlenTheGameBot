@@ -1,13 +1,13 @@
 import { db } from 'sdk';
 import { chatUserStats } from '../schema.js';
 import { eq, and } from 'sdk/db';
-import { CHLEN_CLASSES } from '../utils/constants.js';
+import { CHLEN_CLASSES, CHLEN_CLASS_SKILLS } from '../utils/constants.js';
 import type { UserStatRecord } from '../types/models.js';
 
 export function getClassesText(): string {
   const lines = ['⚔️ Доступные классы:\n'];
   CHLEN_CLASSES.forEach((cls, i) => {
-    lines.push(`${i + 1}. ${cls}`);
+    lines.push(`${i + 1}. ${CHLEN_CLASS_SKILLS[cls]}`);
   });
   return lines.join('\n');
 }
@@ -54,4 +54,38 @@ export async function getUserClass(chatId: string, userId: string): Promise<stri
     }
   }
   return null;
+}
+
+export async function getChlenomantCharges(chatId: string, userId: string): Promise<number> {
+  const rows = (await db
+    .select()
+    .from(chatUserStats)
+    .where(and(eq(chatUserStats.chatId, chatId), eq(chatUserStats.userId, userId)))
+    .run()) as UserStatRecord[];
+
+  return rows && rows.length > 0 ? (rows[0].chlenomantCharges ?? 0) : 0;
+}
+
+export async function addChlenomantCharge(chatId: string, userId: string): Promise<void> {
+  const rows = (await db
+    .select()
+    .from(chatUserStats)
+    .where(and(eq(chatUserStats.chatId, chatId), eq(chatUserStats.userId, userId)))
+    .run()) as UserStatRecord[];
+
+  const current = rows && rows.length > 0 ? (rows[0].chlenomantCharges ?? 0) : 0;
+
+  await db
+    .update(chatUserStats)
+    .set({ chlenomantCharges: current + 1 })
+    .where(and(eq(chatUserStats.chatId, chatId), eq(chatUserStats.userId, userId)))
+    .run();
+}
+
+export async function resetChlenomantCharges(chatId: string, userId?: string): Promise<void> {
+  const condition = userId
+    ? and(eq(chatUserStats.chatId, chatId), eq(chatUserStats.userId, userId))
+    : eq(chatUserStats.chatId, chatId);
+
+  await db.update(chatUserStats).set({ chlenomantCharges: 0 }).where(condition).run();
 }

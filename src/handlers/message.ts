@@ -15,12 +15,7 @@ import {
 } from '../services/game.service.js';
 import { getLeaderboardText, getLongestSessionText } from '../services/stats.service.js';
 import { getClassesText, setUserClass, getUserClass } from '../services/class.service.js';
-import {
-  getUserSkillText,
-  recordSkillUsed,
-  applyWeaknessToTarget,
-} from '../services/skills.service.js';
-import { addStatusEffect } from '../services/statusEffects.service.js';
+import { useSkill } from '../services/skills.service.js';
 import { getQueueMode, setQueueMode } from '../services/queue.service.js';
 import { getStartOnMention, setStartOnMention } from '../services/mention.service.js';
 import {
@@ -37,14 +32,7 @@ import {
 } from '../services/notification.service.js';
 import { chatGameSessions, chatWarnedUsers } from '../schema.js';
 import { eq, and } from 'sdk/db';
-import {
-  CommandStatus,
-  ChlenClass,
-  GameCommand,
-  DUEL_DECLINE_WORDS,
-  SESSION_COOLDOWN_SECONDS,
-  StatusEffectId,
-} from '../utils/constants.js';
+import { CommandStatus, GameCommand, DUEL_DECLINE_WORDS } from '../utils/constants.js';
 import { withChatLock } from '../utils/mutex.js';
 import type { TelegramMessage } from '../types/sdk.d.js';
 import type { GameSessionRecord, WarnedUserRecord } from '../types/models.js';
@@ -201,107 +189,49 @@ export default async function (message: TelegramMessage) {
   // 9. Command /chlenskill
   if (lowerText.startsWith(GameCommand.SKILL)) {
     await withChatLock(chatId, async () => {
-      const sessionRows = (await db
-        .select()
-        .from(chatGameSessions)
-        .where(eq(chatGameSessions.chatId, chatId))
-        .run()) as GameSessionRecord[];
-      const session = sessionRows && sessionRows.length > 0 ? sessionRows[0] : null;
+      const result = await useSkill(chatId, userId, userDisplayName, rawText);
 
-      // Gate 1: active game session required
-      if (!session || session.isActive !== 1) {
-        if (
-          session &&
-          session.sessionEndedAt != null &&
-          Math.floor(Date.now() / 1000) - session.sessionEndedAt < SESSION_COOLDOWN_SECONDS
-        ) {
+      if (!result.success) {
+        await api.sendMessage({
+          chat_id: chatId,
+          text: result.message!,
+          reply_to_message_id: message.message_id,
+        });
+        return;
+      }
+
+      if (result.activationMessage) {
+        await api.sendMessage({
+          chat_id: chatId,
+          text: result.activationMessage,
+          reply_to_message_id: message.message_id,
+        });
+      } else if (result.message) {
+        await api.sendMessage({
+          chat_id: chatId,
+          text: result.message,
+          reply_to_message_id: message.message_id,
+        });
+      }
+
+      // Skill rolls (Членомант / Охотник): reply only on a win, like a usual win
+      for (const res of result.rolls || []) {
+        if (res.gameEnded) {
           await api.sendMessage({
             chat_id: chatId,
-            text: 'Игра только что закончилась. Дай члену отдохнуть.',
+            text: res.outcome || 'Я победил',
             reply_to_message_id: message.message_id,
           });
-          return;
+          await sendGameEndNotification(
+            chatId,
+            CommandStatus.SINGLE_PLAYER_WIN,
+            res.winnerName,
+            res.turns,
+            res.newRecord,
+            res.isDuel
+          );
         }
-        await api.sendMessage({
-          chat_id: chatId,
-          text: 'Нет активной игры. Начни игру командой /chlen.',
-          reply_to_message_id: message.message_id,
-        });
-        return;
       }
-
-      // Gate 2: pending duel blocks the skill
-      if (session.isActive === 1 && session.isDuel === 1 && session.duelIsAccepted === 0) {
-        await api.sendMessage({
-          chat_id: chatId,
-          text: 'Нельзя использовать способность, пока дуэль не принята.',
-          reply_to_message_id: message.message_id,
-        });
-        return;
-      }
-
-      // Class check
-      const skillResult = await getUserSkillText(chatId, userId);
-      if (!skillResult) {
-        await api.sendMessage({
-          chat_id: chatId,
-          text: `${userDisplayName} ещё не выбрал класс. Используй ${GameCommand.BECOME_CLASS}, чтобы выбрать класс.`,
-          reply_to_message_id: message.message_id,
-        });
-        return;
-      }
-
-      // Cooldown check
-      if (skillResult.alreadyUsed) {
-        await api.sendMessage({
-          chat_id: chatId,
-          text: `${userDisplayName} уже использовал свою способность в этой игре!`,
-          reply_to_message_id: message.message_id,
-        });
-        return;
-      }
-
-      // Determine class before recording skill usage
-      const skillClass = await getUserClass(chatId, userId);
-
-      if (skillClass === ChlenClass.CHLENOKNIZHNIK) {
-        const targetText = rawText.split(/\s+/).slice(1).join(' ').trim();
-        const targetResult = await applyWeaknessToTarget(chatId, userId, targetText);
-        if (!targetResult.success) {
-          await api.sendMessage({
-            chat_id: chatId,
-            text: targetResult.message,
-            reply_to_message_id: message.message_id,
-          });
-          return;
-        }
-        await recordSkillUsed(chatId, userId);
-        await api.sendMessage({
-          chat_id: chatId,
-          text: targetResult.message,
-          reply_to_message_id: message.message_id,
-        });
-        return;
-      }
-
-      if (skillClass === ChlenClass.CHLENODIN) {
-        await addStatusEffect(chatId, userId, StatusEffectId.BUFF);
-        await recordSkillUsed(chatId, userId);
-        await api.sendMessage({
-          chat_id: chatId,
-          text: `Шанс победы следующего члена ${userDisplayName} увеличен в 2 раза!`,
-          reply_to_message_id: message.message_id,
-        });
-        return;
-      }
-
-      await recordSkillUsed(chatId, userId);
-      await api.sendMessage({
-        chat_id: chatId,
-        text: `${userDisplayName} использует способность: ${skillResult.skillText}`,
-        reply_to_message_id: message.message_id,
-      });
-      return;
     });
     return;
   }
@@ -553,6 +483,15 @@ export default async function (message: TelegramMessage) {
         res.expectedUserName,
         res.remainingSeconds
       );
+      return;
+    }
+
+    if (res.status === CommandStatus.BLOCKED) {
+      await api.sendMessage({
+        chat_id: chatId,
+        text: 'Охотник на Члены не может ходить до конца игры!',
+        reply_to_message_id: message.message_id,
+      });
       return;
     }
 
