@@ -41,6 +41,10 @@ describe('Class Service', () => {
     CHLEN_CLASSES.forEach((cls) => {
       expect(text).toContain(cls);
     });
+    // Skill texts include the effect explanation in braces
+    expect(text).toContain('{');
+    expect(text).toContain('Мастер тысячи Членов');
+    expect(text).toContain('каждый последующий бросок +5%');
   });
 
   it('rejects invalid class index', async () => {

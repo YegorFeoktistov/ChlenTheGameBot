@@ -20,6 +20,7 @@ export interface UserStatRecord {
   wins: number;
   displayName: string;
   classIndex: number | null;
+  chlenomantCharges?: number;
 }
 
 export interface SubscriberRecord {

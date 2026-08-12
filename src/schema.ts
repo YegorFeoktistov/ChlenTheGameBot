@@ -28,6 +28,7 @@ export const chatUserStats = table(
     wins: integer('wins').default(0),
     displayName: text('display_name'),
     classIndex: integer('class_index'), // 1-5 (nullable)
+    chlenomantCharges: integer('chlenomant_charges').default(0), // Accumulated losses for Chlenomant skill
   },
   (t: TableColumns) => ({
     pk: primaryKey(t.chatId, t.userId),

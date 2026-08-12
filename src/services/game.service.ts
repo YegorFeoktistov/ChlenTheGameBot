@@ -11,10 +11,18 @@ import {
   CommandStatus,
   StrictTurnStatus,
   StatusEffectId,
+  ChlenClass,
   SESSION_COOLDOWN_SECONDS,
   GAME_WIN_CHANCE,
+  MASTER_CHANCE_PENALTY,
+  MASTER_CHANCE_GAIN,
 } from '../utils/constants.js';
-import { getStatusEffects, removeStatusEffect } from './statusEffects.service.js';
+import {
+  getStatusEffects,
+  removeStatusEffect,
+  hasStatusEffect,
+  addStatusEffect,
+} from './statusEffects.service.js';
 import {
   getQueueMode,
   evaluateStrictTurn,
@@ -23,6 +31,7 @@ import {
 } from './queue.service.js';
 import { scheduleTurnTimeout, clearTurnTimeout } from './timer.service.js';
 import { recordAutomaticWin } from './game_rules.js';
+import { getUserClass, addChlenomantCharge, resetChlenomantCharges } from './class.service.js';
 
 export interface CommandResult {
   status: CommandStatus;
@@ -131,6 +140,7 @@ export async function terminateGameSession(
   await clearQueueSession(chatId);
   await db.delete(chatSkillUsers).where(eq(chatSkillUsers.chatId, chatId)).run();
   await db.delete(chatStatusEffectUsers).where(eq(chatStatusEffectUsers.chatId, chatId)).run();
+  await resetChlenomantCharges(chatId);
   clearTurnTimeout(chatId);
 }
 
@@ -144,6 +154,7 @@ export async function initiateDuelSession(
   await db.delete(chatSkillUsers).where(eq(chatSkillUsers.chatId, chatId)).run();
   await db.delete(chatStatusEffectUsers).where(eq(chatStatusEffectUsers.chatId, chatId)).run();
   await db.delete(chatWarnedUsers).where(eq(chatWarnedUsers.chatId, chatId)).run();
+  await resetChlenomantCharges(chatId);
   clearTurnTimeout(chatId);
 
   await db
@@ -196,12 +207,19 @@ export async function abortGameSession(chatId: string): Promise<{ wasActive: boo
   return { wasActive: true };
 }
 
+export interface GameCommandOptions {
+  /** Skill rolls (Членомант / Охотник) skip queue rules, consecutive-move checks and lastUserId updates. */
+  bypassQueue?: boolean;
+}
+
 export async function handleGameCommand(
   chatId: string,
   userId: string,
   userDisplayName: string,
-  rollOverride?: number
+  rollOverride?: number,
+  options: GameCommandOptions = {}
 ): Promise<CommandResult> {
+  const { bypassQueue = false } = options;
   const nowUnix = Math.floor(Date.now() / 1000);
   const queueMode = await getQueueMode(chatId);
 
@@ -261,6 +279,7 @@ export async function handleGameCommand(
     await clearQueueSession(chatId);
     await db.delete(chatSkillUsers).where(eq(chatSkillUsers.chatId, chatId)).run();
     await db.delete(chatStatusEffectUsers).where(eq(chatStatusEffectUsers.chatId, chatId)).run();
+    await resetChlenomantCharges(chatId);
     clearTurnTimeout(chatId);
 
     session.isActive = 1;
@@ -271,94 +290,101 @@ export async function handleGameCommand(
     gameStarted = true;
   }
 
+  // Охотник на Члены cannot roll after using his skill until the game ends
+  if (!bypassQueue && (await hasStatusEffect(chatId, userId, StatusEffectId.HUNTER_BLOCK))) {
+    return { status: CommandStatus.BLOCKED };
+  }
+
   let isFirstMoveForUser = false;
   let strictResSkips: { displayName: string; isExcluded: boolean; nextUserMention?: string }[] = [];
 
   // 2. Mode-specific turn order & anti-spam evaluation
-  if (session.isDuel === 1) {
-    // Duel always runs on non-strict queue logic
-    if (session.lastUserId && session.lastUserId === userId) {
-      return handleOutOfTurnWarning(chatId, userId);
-    }
-    isFirstMoveForUser = await registerNonStrictPlayer(chatId, userId, nowUnix);
-  } else if (queueMode === 1) {
-    const strictRes = await evaluateStrictTurn(
-      chatId,
-      userId,
-      userDisplayName,
-      nowUnix,
-      session.lastUserId,
-      session.currentTurnStartedAt
-    );
-
-    if (strictRes.currentTurnStartedAt !== undefined) {
-      session.currentTurnStartedAt = strictRes.currentTurnStartedAt;
-    }
-    if (strictRes.lastUserId !== undefined) {
-      session.lastUserId = strictRes.lastUserId;
-    }
-
-    strictResSkips = strictRes.skippedPlayers || [];
-
-    if (strictRes.status === StrictTurnStatus.EXCLUDED) {
-      return { status: CommandStatus.EXCLUDED };
-    }
-
-    if (strictRes.status === StrictTurnStatus.SOLE_PLAYER_TIMEOUT) {
-      await terminateGameSession(chatId, nowUnix);
-
-      return {
-        status: CommandStatus.SOLE_PLAYER_TIMEOUT,
-      };
-    }
-
-    if (strictRes.status === StrictTurnStatus.SINGLE_PLAYER_WIN) {
-      const winDetails = await recordAutomaticWin(
+  if (!bypassQueue) {
+    if (session.isDuel === 1) {
+      // Duel always runs on non-strict queue logic
+      if (session.lastUserId && session.lastUserId === userId) {
+        return handleOutOfTurnWarning(chatId, userId);
+      }
+      isFirstMoveForUser = await registerNonStrictPlayer(chatId, userId, nowUnix);
+    } else if (queueMode === 1) {
+      const strictRes = await evaluateStrictTurn(
         chatId,
-        strictRes.winnerId!,
-        strictRes.winnerName!,
+        userId,
+        userDisplayName,
         nowUnix,
-        session.sessionMessagesCount
+        session.lastUserId,
+        session.currentTurnStartedAt
       );
-      await terminateGameSession(chatId, nowUnix);
 
-      return {
-        status: CommandStatus.SINGLE_PLAYER_WIN,
-        winnerName: strictRes.winnerName,
-        turns: winDetails.turns,
-        newRecord: winDetails.newRecord,
-        skippedPlayers: strictResSkips,
-      };
-    }
+      if (strictRes.currentTurnStartedAt !== undefined) {
+        session.currentTurnStartedAt = strictRes.currentTurnStartedAt;
+      }
+      if (strictRes.lastUserId !== undefined) {
+        session.lastUserId = strictRes.lastUserId;
+      }
 
-    if (strictRes.status === StrictTurnStatus.ALL_EXCLUDED) {
-      await terminateGameSession(chatId, nowUnix);
+      strictResSkips = strictRes.skippedPlayers || [];
 
-      return {
-        status: CommandStatus.ALL_EXCLUDED,
-        skippedPlayers: strictResSkips,
-      };
-    }
+      if (strictRes.status === StrictTurnStatus.EXCLUDED) {
+        return { status: CommandStatus.EXCLUDED };
+      }
 
-    if (strictRes.status === StrictTurnStatus.OUT_OF_TURN_WARNING) {
-      const warnRes = await handleOutOfTurnWarning(chatId, userId);
-      return {
-        ...warnRes,
-        expectedUserName: strictRes.expectedUserDisplayName,
-        remainingSeconds: strictRes.remainingSeconds,
-        skippedPlayers: strictResSkips,
-      };
-    }
+      if (strictRes.status === StrictTurnStatus.SOLE_PLAYER_TIMEOUT) {
+        await terminateGameSession(chatId, nowUnix);
 
-    if (strictRes.isFirstMove) {
-      isFirstMoveForUser = true;
+        return {
+          status: CommandStatus.SOLE_PLAYER_TIMEOUT,
+        };
+      }
+
+      if (strictRes.status === StrictTurnStatus.SINGLE_PLAYER_WIN) {
+        const winDetails = await recordAutomaticWin(
+          chatId,
+          strictRes.winnerId!,
+          strictRes.winnerName!,
+          nowUnix,
+          session.sessionMessagesCount
+        );
+        await terminateGameSession(chatId, nowUnix);
+
+        return {
+          status: CommandStatus.SINGLE_PLAYER_WIN,
+          winnerName: strictRes.winnerName,
+          turns: winDetails.turns,
+          newRecord: winDetails.newRecord,
+          skippedPlayers: strictResSkips,
+        };
+      }
+
+      if (strictRes.status === StrictTurnStatus.ALL_EXCLUDED) {
+        await terminateGameSession(chatId, nowUnix);
+
+        return {
+          status: CommandStatus.ALL_EXCLUDED,
+          skippedPlayers: strictResSkips,
+        };
+      }
+
+      if (strictRes.status === StrictTurnStatus.OUT_OF_TURN_WARNING) {
+        const warnRes = await handleOutOfTurnWarning(chatId, userId);
+        return {
+          ...warnRes,
+          expectedUserName: strictRes.expectedUserDisplayName,
+          remainingSeconds: strictRes.remainingSeconds,
+          skippedPlayers: strictResSkips,
+        };
+      }
+
+      if (strictRes.isFirstMove) {
+        isFirstMoveForUser = true;
+      }
+    } else {
+      // Non-strict mode consecutive move check
+      if (session.lastUserId && session.lastUserId === userId) {
+        return handleOutOfTurnWarning(chatId, userId);
+      }
+      isFirstMoveForUser = await registerNonStrictPlayer(chatId, userId, nowUnix);
     }
-  } else {
-    // Non-strict mode consecutive move check
-    if (session.lastUserId && session.lastUserId === userId) {
-      return handleOutOfTurnWarning(chatId, userId);
-    }
-    isFirstMoveForUser = await registerNonStrictPlayer(chatId, userId, nowUnix);
   }
 
   let newRecord = false;
@@ -367,7 +393,9 @@ export async function handleGameCommand(
   // 3. Reset warned users list on valid turn or game start
   await db.delete(chatWarnedUsers).where(eq(chatWarnedUsers.chatId, chatId)).run();
 
-  session.lastUserId = userId;
+  if (!bypassQueue) {
+    session.lastUserId = userId;
+  }
 
   if (gameStarted) {
     session.sessionMessagesCount = 1;
@@ -396,7 +424,26 @@ export async function handleGameCommand(
     const buffCount = weaknessEffects
       .filter((e) => e.statusEffectId === StatusEffectId.BUFF)
       .reduce((sum, e) => sum + e.count, 0);
-    const winChance = (GAME_WIN_CHANCE / Math.pow(2, weaknessCount)) * Math.pow(2, buffCount);
+    const masterCount = weaknessEffects
+      .filter((e) => e.statusEffectId === StatusEffectId.MASTER_RISING)
+      .reduce((sum, e) => sum + e.count, 0);
+
+    // Мастер тысячи Членов: next roll has 0% chance, each following roll gains +5% (cumulative)
+    let baseWinChance = GAME_WIN_CHANCE;
+    if (masterCount > 0) {
+      baseWinChance = Math.min(
+        1,
+        Math.max(
+          0,
+          GAME_WIN_CHANCE - MASTER_CHANCE_PENALTY + MASTER_CHANCE_GAIN * (masterCount - 1)
+        )
+      );
+    }
+    const winChance = (baseWinChance / Math.pow(2, weaknessCount)) * Math.pow(2, buffCount);
+
+    if (masterCount > 0) {
+      await addStatusEffect(chatId, userId, StatusEffectId.MASTER_RISING);
+    }
     if (buffCount > 0) {
       await removeStatusEffect(chatId, userId, StatusEffectId.BUFF);
     }
@@ -418,6 +465,15 @@ export async function handleGameCommand(
       outcome = 'Член';
       gameEnded = false;
     }
+  }
+
+  // Членомант accumulates a charge for every lost roll (including the game-starting roll)
+  if (
+    !bypassQueue &&
+    outcome === 'Член' &&
+    (await getUserClass(chatId, userId)) === ChlenClass.CHLENOMANT
+  ) {
+    await addChlenomantCharge(chatId, userId);
   }
 
   if (!gameEnded) {
@@ -445,7 +501,7 @@ export async function handleGameCommand(
       .run();
   }
 
-  if (queueMode === 1 && !gameEnded) {
+  if (queueMode === 1 && !gameEnded && !bypassQueue) {
     scheduleTurnTimeout(chatId);
   }
 

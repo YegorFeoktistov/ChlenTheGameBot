@@ -121,18 +121,30 @@ describe('Status Effects', () => {
                   const all = Object.values(mockStatusEffects);
                   if (cond && typeof cond === 'object') {
                     const condStr = JSON.stringify(cond);
+                    let filtered = all;
                     if (condStr.includes('chat1')) {
-                      const userIdMatch = condStr.includes('user1')
-                        ? 'user1'
-                        : condStr.includes('user2')
-                          ? 'user2'
-                          : null;
-                      if (userIdMatch) {
-                        return all.filter((e) => e.userId === userIdMatch);
-                      }
-                      return all.filter((e) => e.chatId === 'chat1');
+                      filtered = filtered.filter((e) => e.chatId === 'chat1');
                     }
-                    return all;
+                    const userIdMatch = condStr.includes('user1')
+                      ? 'user1'
+                      : condStr.includes('user2')
+                        ? 'user2'
+                        : condStr.includes('user3')
+                          ? 'user3'
+                          : null;
+                    if (userIdMatch) {
+                      filtered = filtered.filter((e) => e.userId === userIdMatch);
+                    }
+                    const effectMatch = [
+                      'Хватка охотника',
+                      'Членовосхождение',
+                      'Членослабость',
+                      'Членосила',
+                    ].find((id) => condStr.includes(id));
+                    if (effectMatch) {
+                      filtered = filtered.filter((e) => e.statusEffectId === effectMatch);
+                    }
+                    return filtered;
                   }
                   return all;
                 }

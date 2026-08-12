@@ -153,6 +153,16 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    name: '007_add_chlenomant_charges',
+    up: (db) => {
+      const columns = db.pragma('table_info(chat_user_stats)') as { name: string }[];
+      const hasCharges = columns.some((c) => c.name === 'chlenomant_charges');
+      if (!hasCharges) {
+        db.exec('ALTER TABLE chat_user_stats ADD COLUMN chlenomant_charges INTEGER DEFAULT 0;');
+      }
+    },
+  },
 ];
 
 /**
